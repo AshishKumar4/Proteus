@@ -35,7 +35,7 @@ export default function MCTSExplorer() {
 
   return (
     <div className="h-full flex flex-col bg-kumo-elevated">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
+      <div className="flex items-center justify-between px-5 py-3.5 border-b p-divider">
         <div className="flex items-center gap-3">
           <Link to={`/agent/${agentId}`}><Button variant="ghost" size="sm" icon={<ArrowLeftIcon size={14} />}>Back</Button></Link>
           <div className="h-4 w-px bg-kumo-line" />
@@ -49,7 +49,7 @@ export default function MCTSExplorer() {
           <Button variant="ghost" shape="square" size="sm" icon={<ArrowsOutIcon size={16} />} aria-label="Fit" />
         </div>
       </div>
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-kumo-line text-xs text-kumo-subtle bg-kumo-base">
+      <div className="flex items-center gap-4 px-5 py-2 border-b p-divider text-xs text-kumo-subtle">
         <span className="font-medium text-kumo-default">Legend:</span>
         <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-green-500" />High</span>
         <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-amber-400" />Medium</span>
@@ -62,7 +62,7 @@ export default function MCTSExplorer() {
           <div className="flex items-center justify-center h-full"><div className="flex items-center gap-2 text-sm text-kumo-subtle"><Loader size="sm" />Loading tree...</div></div>
         ) : dims.w > 0 && <MCTSTree root={tree} width={dims.w} height={dims.h} onNodeClick={setSelected} />}
       </div>
-      <div className="flex items-center justify-between px-4 py-2.5 border-t border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
+      <div className="flex items-center justify-between px-5 py-2.5 border-t p-divider">
         <div className="flex items-center gap-6 text-xs">
           <span className="text-kumo-subtle">Nodes: <span className="text-kumo-default font-medium">{total}</span></span>
           <span className="text-kumo-subtle">Depth: <span className="text-kumo-default font-medium">{depth}</span></span>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useLocation, Link } from "react-router-dom";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from "react-resizable-panels";
-import { Button, Badge, Surface, Empty, InputArea, Loader } from "@cloudflare/kumo";
+import { Button, Badge, Empty, InputArea, Loader } from "@cloudflare/kumo";
 import { Code } from "@cloudflare/kumo/components/code";
 import {
   PaperPlaneRightIcon, StopIcon, WrenchIcon, SparkleIcon,
@@ -24,10 +24,10 @@ import type { MCTSNode } from "@/lib/protocol";
 const TABS = ["Identity", "Tools", "Memory", "MCTS Tree", "Evolution", "Logs"] as const;
 type Tab = (typeof TABS)[number];
 const MODELS = [
-  { id: "@cf/moonshotai/kimi-k2.5", label: "Kimi K2.5 (reasoning)" },
-  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout (fast)" },
+  { id: "@cf/moonshotai/kimi-k2.5", label: "Kimi K2.5" },
+  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" },
   { id: "@cf/meta/llama-4-maverick-17b-128e-instruct", label: "Llama 4 Maverick" },
-  { id: "@cf/qwen/qwen2.5-coder-32b-instruct", label: "Qwen 2.5 Coder 32B" },
+  { id: "@cf/qwen/qwen2.5-coder-32b-instruct", label: "Qwen 2.5 Coder" },
 ];
 
 /* ── Code block ───────────────────────────────────────────────── */
@@ -77,14 +77,14 @@ function getMessageText(msg: UIMessage): string {
 function ReasoningBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="rounded-lg px-3 py-2 my-1 p-surface" style={{ borderLeftColor: "hsl(280 60% 50% / 0.5)", borderLeftWidth: 3 }}>
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-purple-400 w-full text-left">
+    <div className="p-card rounded-lg px-3 py-2 my-1.5" style={{ borderLeftWidth: 2, borderLeftColor: "hsl(280 50% 55% / 0.4)" }}>
+      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-purple-400/80 w-full text-left">
         <GearIcon size={12} className="shrink-0" />
         <span className="font-medium">Thinking</span>
         {expanded ? <CaretDownIcon size={12} className="ml-auto" /> : <CaretRightIcon size={12} className="ml-auto" />}
       </button>
-      <div className={`mt-1 text-xs text-purple-300/70 whitespace-pre-wrap ${!expanded ? "line-clamp-2" : ""}`}>
-        {expanded ? text : text.length > 80 ? text.slice(0, 80) + "..." : text}
+      <div className={`mt-1 text-xs text-kumo-subtle whitespace-pre-wrap ${!expanded ? "line-clamp-2" : ""}`}>
+        {expanded ? text : text.length > 100 ? text.slice(0, 100) + "..." : text}
       </div>
     </div>
   );
@@ -99,13 +99,13 @@ function ToolCallBlock({ toolName, input, output, isRunning, isError }: {
       <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-kumo-subtle hover:text-kumo-default transition-colors">
         {isRunning ? <Loader size="sm" /> : isError ? <WrenchIcon size={12} className="text-red-400" /> : <CheckCircleIcon size={12} className="text-green-400" />}
         <span className="font-mono">{toolName}</span>
-        {isRunning && <span className="text-amber-400">running...</span>}
-        {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
+        {isRunning && <span className="text-amber-400/80 text-[11px]">running...</span>}
+        {expanded ? <CaretDownIcon size={10} /> : <CaretRightIcon size={10} />}
       </button>
       {expanded && (
-        <div className="mt-1 ml-5 space-y-1 animate-scale-in">
-          {input != null && <pre className="rounded-lg bg-kumo-elevated border border-kumo-line p-2.5 text-xs font-mono text-kumo-subtle max-h-32 overflow-auto">{JSON.stringify(input, null, 2)}</pre>}
-          {output != null && <pre className="rounded-lg bg-kumo-elevated border border-kumo-line p-2.5 text-xs font-mono text-kumo-subtle max-h-32 overflow-auto whitespace-pre-wrap">{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>}
+        <div className="mt-1.5 ml-5 space-y-1 animate-scale-in">
+          {input != null && <pre className="rounded-lg bg-kumo-elevated border border-kumo-line p-2.5 text-xs font-mono text-kumo-subtle max-h-40 overflow-auto">{JSON.stringify(input, null, 2)}</pre>}
+          {output != null && <pre className="rounded-lg bg-kumo-elevated border border-kumo-line p-2.5 text-xs font-mono text-kumo-subtle max-h-40 overflow-auto whitespace-pre-wrap">{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>}
         </div>
       )}
     </div>
@@ -119,7 +119,7 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
   if (isUser) {
     return (
       <div className="flex justify-end animate-fade-in">
-        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-br-md p-user-bubble leading-relaxed text-sm whitespace-pre-wrap shadow-md">
+        <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-br-sm p-user-bubble text-sm leading-relaxed whitespace-pre-wrap">
           {getMessageText(message)}
         </div>
       </div>
@@ -134,11 +134,11 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
 
   if (isLive && !hasContent) {
     return (
-      <div className="flex items-center gap-2 animate-fade-in py-1">
+      <div className="flex items-center gap-2 animate-fade-in py-2">
         <div className="flex gap-1">
-          <span className="size-1.5 rounded-full animate-bounce [animation-delay:0ms]" style={{ background: "hsl(var(--p-accent))" }} />
-          <span className="size-1.5 rounded-full animate-bounce [animation-delay:150ms]" style={{ background: "hsl(var(--p-accent))" }} />
-          <span className="size-1.5 rounded-full animate-bounce [animation-delay:300ms]" style={{ background: "hsl(var(--p-accent))" }} />
+          <span className="size-1.5 rounded-full bg-kumo-subtle animate-bounce [animation-delay:0ms]" />
+          <span className="size-1.5 rounded-full bg-kumo-subtle animate-bounce [animation-delay:150ms]" />
+          <span className="size-1.5 rounded-full bg-kumo-subtle animate-bounce [animation-delay:300ms]" />
         </div>
         <span className="text-xs text-kumo-inactive">Thinking...</span>
       </div>
@@ -146,7 +146,7 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
   }
 
   return (
-    <div className="space-y-1 animate-fade-in">
+    <div className="max-w-[85%] space-y-1 animate-fade-in">
       {message.parts.map((part, i) => {
         if (part.type === "reasoning") {
           const t = (part as { text?: string }).text;
@@ -178,7 +178,7 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
   );
 }
 
-/* ── Sidebar tabs ─────────────────────────────────────────────── */
+/* ── Sidebar components ───────────────────────────────────────── */
 
 const EVO_COLORS: Record<string, string> = {
   craft_discovered: "bg-green-500", mcts_complete: "bg-green-500", reflection: "bg-blue-500",
@@ -194,7 +194,7 @@ function EvolutionItem({ event }: { event: EvolutionEventRow }) {
       </div>
       <div className="pb-4">
         <div className="flex items-center gap-2 text-xs text-kumo-subtle mb-0.5">
-          <span className="font-mono">{new Date(event.created_at).toLocaleTimeString()}</span>
+          <span className="font-mono text-[11px]">{new Date(event.created_at).toLocaleTimeString()}</span>
           <Badge variant="secondary">{event.type}</Badge>
         </div>
         <span className="text-sm text-kumo-default block">{event.message}</span>
@@ -203,8 +203,14 @@ function EvolutionItem({ event }: { event: EvolutionEventRow }) {
   );
 }
 
-function EmptyTab({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return <Empty icon={icon} title={text} />;
+function EmptyTab({ icon, title, hint }: { icon: React.ReactNode; title: string; hint?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="text-kumo-inactive mb-3">{icon}</div>
+      <p className="text-sm text-kumo-subtle">{title}</p>
+      {hint && <p className="text-xs text-kumo-inactive mt-1">{hint}</p>}
+    </div>
+  );
 }
 
 function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
@@ -219,7 +225,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
     return () => ro.disconnect();
   }, [selectedNode]);
 
-  if (!mctsTree) return <EmptyTab icon={<GitBranchIcon size={32} className="p-accent" />} text="No exploration history" />;
+  if (!mctsTree) return <EmptyTab icon={<GitBranchIcon size={28} />} title="No exploration history" hint="Use the explore tool or trigger evolution" />;
   function countN(n: MCTSNode): number { return 1 + n.children.reduce((s, c) => s + countN(c), 0); }
   function maxD(n: MCTSNode): number { return n.children.length === 0 ? n.depth : Math.max(...n.children.map(maxD)); }
   return (
@@ -231,7 +237,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
       </div>
       <div className="flex-1 min-h-0">{dims.w > 0 && <MCTSTree root={mctsTree} width={dims.w} height={dims.h} onNodeClick={setSelectedNode} selectedNode={selectedNode} />}</div>
       {selectedNode && (
-        <div className="p-surface rounded-lg p-3 mt-2 animate-fade-in">
+        <div className="p-card rounded-lg p-3 mt-2 animate-fade-in">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-kumo-default">Node Details</span>
             <Button variant="ghost" size="sm" onClick={() => setSelectedNode(null)}>Close</Button>
@@ -250,7 +256,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
 function ModelSelector({ current, onChange }: { current: string; onChange: (id: string) => void }) {
   return (
     <select value={current} onChange={e => onChange(e.target.value)}
-      className="text-xs bg-kumo-elevated border border-kumo-line rounded-md px-2 py-1 text-kumo-default focus:outline-none focus:ring-1" style={{ boxShadow: "none" }}>
+      className="text-[11px] bg-kumo-elevated border border-kumo-line rounded-md px-1.5 py-1 text-kumo-default focus:outline-none">
       {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
     </select>
   );
@@ -264,13 +270,13 @@ function LogsTab({ logs, connectionStatus }: { logs: LogEntry[]; connectionStatu
     <div className="animate-fade-in space-y-1">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <TerminalIcon size={16} className="text-kumo-subtle" />
+          <TerminalIcon size={14} className="text-kumo-subtle" />
           <span className="text-sm font-medium text-kumo-default">Activity Log</span>
           <Badge variant="secondary">{logs.length}</Badge>
         </div>
         <ConnectionIndicator status={connectionStatus as "connected" | "connecting" | "disconnected" | "error"} />
       </div>
-      {logs.length === 0 ? <EmptyTab icon={<TerminalIcon size={32} />} text="No activity yet" /> : (
+      {logs.length === 0 ? <EmptyTab icon={<TerminalIcon size={28} />} title="No activity yet" /> : (
         <div className="space-y-1 max-h-[calc(100vh-200px)] overflow-y-auto">
           {logs.map(log => (
             <div key={log.id} className="rounded border border-kumo-line bg-kumo-elevated px-2.5 py-1.5 text-xs font-mono">
@@ -320,7 +326,7 @@ export default function WorkspacePage() {
 
   if (state.connectionStatus === "error") return (
     <div className="h-full flex items-center justify-center">
-      <Empty icon={<WifiSlashIcon size={32} className="text-red-400" />} title="Connection lost" description="Check your network or restart the server" />
+      <EmptyTab icon={<WifiSlashIcon size={28} className="text-red-400" />} title="Connection lost" hint="Check your network or restart the server" />
     </div>
   );
   if (state.connectionStatus === "connecting" && !state.agentStatus) return (
@@ -331,36 +337,37 @@ export default function WorkspacePage() {
   return (
     <div className="h-full flex flex-col">
       {state.connectionStatus === "disconnected" && (
-        <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs text-amber-300" style={{ background: "hsl(40 80% 50% / 0.08)", borderBottom: "1px solid hsl(40 80% 50% / 0.2)" }}>
+        <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs text-amber-300 border-b p-divider" style={{ background: "hsl(40 60% 50% / 0.06)" }}>
           <ArrowsClockwiseIcon size={12} className="animate-spin" />Reconnecting...
         </div>
       )}
       <PanelGroup className="flex-1">
         {/* ── Chat Panel ──────────────────────────────────────── */}
         <Panel minSize={30} defaultSize={42}>
-          <div className="flex flex-col h-full border-r border-kumo-line">
-            {/* Chat header — slightly raised */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
-              <div className="flex items-center gap-2">
+          <div className="flex flex-col h-full border-r p-divider">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b p-divider">
+              <div className="flex items-center gap-3">
                 <ConnectionIndicator status={state.connectionStatus} />
-                <span className="font-semibold text-sm text-kumo-default">{as?.displayName || agentId}</span>
+                <span className="font-medium text-sm text-kumo-default truncate max-w-[180px]">{as?.displayName || agentId}</span>
                 {state.isStreaming && <Badge variant="primary">streaming</Badge>}
               </div>
               <div className="flex items-center gap-2">
-                {state.messages.length > 0 && <span className="flex items-center gap-1 text-xs text-kumo-subtle"><ChatTextIcon size={12} />{state.messages.length}</span>}
                 <ModelSelector current={as?.model ?? MODELS[0]!.id} onChange={state.setModel} />
-                {state.messages.length > 0 && <Button variant="ghost" shape="square" size="sm" onClick={state.clearHistory} icon={<TrashIcon size={12} />} aria-label="Clear" />}
-                <Link to={`/mcts/${agentId}`} className="flex items-center gap-1 text-xs p-accent hover:opacity-80 transition-opacity">
-                  <TreeStructureIcon size={12} />MCTS<ArrowSquareOutIcon size={12} />
+                {state.messages.length > 0 && (
+                  <Button variant="ghost" shape="square" size="sm" onClick={state.clearHistory} icon={<TrashIcon size={12} />} aria-label="Clear" />
+                )}
+                <Link to={`/mcts/${agentId}`} className="flex items-center gap-1 text-[11px] p-accent hover:opacity-80 transition-opacity">
+                  <TreeStructureIcon size={12} />MCTS<ArrowSquareOutIcon size={10} />
                 </Link>
               </div>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {/* Messages — generous padding for spacious feel */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 lg:px-8">
               {state.messages.length === 0 && !state.isStreaming && (
                 <div className="flex flex-col items-center justify-center h-full">
-                  <BrainIcon size={40} className="p-accent opacity-30 mb-3" />
+                  <BrainIcon size={36} className="text-kumo-inactive mb-3" />
                   <p className="text-sm text-kumo-inactive">Send a message to start</p>
                 </div>
               )}
@@ -368,57 +375,65 @@ export default function WorkspacePage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input — accent focus ring */}
-            <div className="p-3 border-t border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
-              {state.error && <div className="mb-2 text-xs text-red-400 p-surface rounded-lg px-3 py-1.5" style={{ borderColor: "hsl(0 60% 50% / 0.2)" }}>{state.error}</div>}
-              <div className="flex items-end gap-3 rounded-xl p-surface p-3 shadow-sm p-input-ring transition-all">
+            {/* Input */}
+            <div className="px-5 py-3 border-t p-divider lg:px-7">
+              {state.error && <div className="mb-2 text-xs text-red-400 p-card rounded-lg px-3 py-1.5">{state.error}</div>}
+              <div className="flex items-end gap-3 p-card rounded-xl p-3 p-input-ring transition-all">
                 <InputArea value={chatInput} onValueChange={setChatInput}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   placeholder="Send a message..." disabled={state.connectionStatus !== "connected"} rows={1}
                   className="flex-1 !ring-0 focus:!ring-0 !shadow-none !bg-transparent !outline-none" />
                 {state.isStreaming
-                  ? <Button variant="secondary" shape="square" onClick={state.abortChat} icon={<StopIcon size={18} weight="fill" />} aria-label="Stop" className="mb-0.5" />
-                  : <button onClick={handleSend} disabled={!chatInput.trim() || state.connectionStatus !== "connected"} className="p-gradient-btn rounded-lg p-2 mb-0.5 cursor-pointer" aria-label="Send"><PaperPlaneRightIcon size={18} /></button>}
+                  ? <Button variant="secondary" shape="square" onClick={state.abortChat} icon={<StopIcon size={16} weight="fill" />} aria-label="Stop" className="mb-0.5" />
+                  : <button onClick={handleSend} disabled={!chatInput.trim() || state.connectionStatus !== "connected"} className="p-send-btn rounded-lg p-2 mb-0.5 cursor-pointer" aria-label="Send"><PaperPlaneRightIcon size={16} /></button>}
               </div>
             </div>
           </div>
         </Panel>
 
-        <PanelResizeHandle className="w-[3px] bg-kumo-line/30 hover:bg-kumo-accent/30 transition-colors cursor-col-resize" />
+        <PanelResizeHandle className="w-[3px] bg-kumo-line/20 hover:bg-kumo-accent/30 transition-colors cursor-col-resize" />
 
         {/* ── Right Panel ─────────────────────────────────────── */}
         <Panel minSize={25} defaultSize={58}>
           <div className="flex flex-col h-full">
-            {/* Tabs — accent active indicator */}
-            <div className="flex items-center border-b border-kumo-line px-1" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
+            {/* Tabs — thin accent underline */}
+            <div className="flex items-center border-b p-divider px-2 gap-0.5">
               {TABS.map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
-                  className={`px-3 py-2.5 text-xs font-medium transition-all border-b-2 -mb-px rounded-t ${
-                    activeTab === tab ? "p-tab-active" : "text-kumo-subtle border-transparent hover:text-kumo-default hover:bg-kumo-elevated/50"
+                  className={`px-3 py-2.5 text-xs font-medium transition-colors border-b -mb-px ${
+                    activeTab === tab ? "p-tab-active border-b-[1.5px]" : "text-kumo-subtle border-transparent hover:text-kumo-default"
                   }`}>
                   {tab}
                 </button>
               ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto p-5">
               {/* Identity */}
               {activeTab === "Identity" && (as ? (
                 <div className="space-y-4 animate-fade-in">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="size-12 rounded-xl flex items-center justify-center p-accent-bg-subtle" style={{ border: "1px solid hsl(var(--p-accent) / 0.2)" }}>
-                      <FingerprintIcon size={24} className="p-accent" />
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="size-11 rounded-xl flex items-center justify-center bg-kumo-elevated border border-kumo-line">
+                      <FingerprintIcon size={22} className="p-accent" />
                     </div>
                     <div>
-                      <div className="font-semibold text-kumo-default">{as.name}</div>
-                      <div className="text-xs text-kumo-subtle font-mono">{as.id.slice(0, 16)}...</div>
+                      <div className="font-medium text-kumo-default">{as.name}</div>
+                      <div className="text-[11px] text-kumo-inactive font-mono">{as.id.slice(0, 20)}...</div>
                     </div>
                   </div>
                   <div className="space-y-0">
-                    {([["Purpose", as.purpose], ["Model", MODELS.find(m => m.id === as.model)?.label ?? as.model], ["Scaffold", `v${as.scaffoldVersion}`], ["MCTS Nodes", as.searchNodeCount], ["Crafted Tools", as.craftedToolCount], ["Messages", as.messageCount], ["Created", new Date(as.createdAt).toLocaleString()]] as const).map(([l, v]) => (
-                      <div key={l} className="flex items-center justify-between py-2.5 border-b border-kumo-line">
+                    {([
+                      ["Purpose", as.purpose],
+                      ["Model", MODELS.find(m => m.id === as.model)?.label ?? as.model],
+                      ["Scaffold", `v${as.scaffoldVersion}`],
+                      ["MCTS Nodes", String(as.searchNodeCount)],
+                      ["Crafted Tools", String(as.craftedToolCount)],
+                      ["Messages", String(as.messageCount)],
+                      ["Created", new Date(as.createdAt).toLocaleString()],
+                    ]).map(([l, v]) => (
+                      <div key={l} className="flex items-center justify-between py-2.5 border-b border-kumo-line last:border-0">
                         <span className="text-sm text-kumo-subtle">{l}</span>
-                        <span className="text-sm font-medium text-kumo-default max-w-[60%] text-right">{String(v)}</span>
+                        <span className="text-sm text-kumo-default max-w-[60%] text-right">{v}</span>
                       </div>
                     ))}
                   </div>
@@ -428,10 +443,15 @@ export default function WorkspacePage() {
               {/* Tools */}
               {activeTab === "Tools" && (
                 <div className="space-y-2 animate-fade-in">
-                  {state.tools.length === 0 ? <EmptyTab icon={<PackageIcon size={32} className="p-accent" />} text="No tools discovered yet" /> : state.tools.map(tool => (
-                    <div key={tool.name} className="p-card p-card-accent rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1.5"><PackageIcon size={14} className="p-accent" /><span className="text-sm font-medium font-mono text-kumo-default">{tool.name}</span></div>
-                      <span className="text-xs text-kumo-subtle block">{tool.description}</span>
+                  {state.tools.length === 0 ? (
+                    <EmptyTab icon={<PackageIcon size={28} />} title="No tools discovered yet" hint="The agent discovers tools as it works" />
+                  ) : state.tools.map(tool => (
+                    <div key={tool.name} className="p-card rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <PackageIcon size={13} className="p-accent" />
+                        <span className="text-sm font-medium font-mono text-kumo-default">{tool.name}</span>
+                      </div>
+                      <span className="text-xs text-kumo-subtle block leading-relaxed">{tool.description}</span>
                     </div>
                   ))}
                 </div>
@@ -443,22 +463,25 @@ export default function WorkspacePage() {
                   <div className="relative">
                     <MagnifyingGlassIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-kumo-inactive" />
                     <input value={memorySearch} onChange={e => { setMemorySearch(e.target.value); state.searchMemory(e.target.value); }}
-                      placeholder="Search memory..." className="w-full rounded-lg border border-kumo-line bg-kumo-elevated pl-9 pr-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-2 placeholder:text-kumo-inactive transition-all" style={{ focusRingColor: "hsl(var(--p-accent) / 0.3)" }} />
+                      placeholder="Search memory..." className="w-full rounded-lg border border-kumo-line bg-kumo-elevated pl-9 pr-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-1 focus:ring-kumo-ring placeholder:text-kumo-inactive transition-all" />
                   </div>
                   {!memorySearch && state.memoryContent ? (
-                    <div className="p-card p-card-accent rounded-lg p-3">
+                    <div className="p-card rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-2">
-                        <DatabaseIcon size={14} className="p-accent" /><span className="text-xs font-mono p-accent">memory/MEMORY.md</span>
-                        <span className="text-xs text-kumo-inactive ml-auto">{state.memoryContent.length} chars</span>
+                        <DatabaseIcon size={13} className="p-accent" />
+                        <span className="text-xs font-mono p-accent">memory/MEMORY.md</span>
+                        <span className="text-[10px] text-kumo-inactive ml-auto">{state.memoryContent.length} chars</span>
                       </div>
-                      <pre className="text-xs text-kumo-subtle whitespace-pre-wrap max-h-96 overflow-y-auto">{state.memoryContent}</pre>
+                      <pre className="text-xs text-kumo-subtle whitespace-pre-wrap max-h-96 overflow-y-auto leading-relaxed">{state.memoryContent}</pre>
                     </div>
-                  ) : !memorySearch ? <EmptyTab icon={<FolderOpenIcon size={32} className="p-accent" />} text="No memories yet" />
-                  : state.memory.length === 0 ? <EmptyTab icon={<MagnifyingGlassIcon size={32} />} text="No results" />
-                  : state.memory.map((entry, i) => (
+                  ) : !memorySearch ? (
+                    <EmptyTab icon={<FolderOpenIcon size={28} />} title="No memories yet" hint="Ask the agent to remember something with save_note" />
+                  ) : state.memory.length === 0 ? (
+                    <EmptyTab icon={<MagnifyingGlassIcon size={28} />} title="No results" />
+                  ) : state.memory.map((entry, i) => (
                     <div key={i} className="p-card rounded-lg p-3">
-                      <span className="text-xs font-mono p-accent">{entry.updatedAt}</span>
-                      <p className="text-xs text-kumo-subtle line-clamp-4 whitespace-pre-wrap mt-1">{entry.content}</p>
+                      <span className="text-[11px] font-mono p-accent">{entry.updatedAt}</span>
+                      <p className="text-xs text-kumo-subtle line-clamp-4 whitespace-pre-wrap mt-1 leading-relaxed">{entry.content}</p>
                     </div>
                   ))}
                 </div>
@@ -470,10 +493,16 @@ export default function WorkspacePage() {
               {activeTab === "Evolution" && (
                 <div className="animate-fade-in">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2"><ClockIcon size={16} className="text-kumo-subtle" /><span className="text-sm font-semibold text-kumo-default">Evolution Timeline</span>{state.evolutionEvents.length > 0 && <Badge variant="secondary">{state.evolutionEvents.length}</Badge>}</div>
+                    <div className="flex items-center gap-2">
+                      <ClockIcon size={14} className="text-kumo-subtle" />
+                      <span className="text-sm font-medium text-kumo-default">Evolution Timeline</span>
+                      {state.evolutionEvents.length > 0 && <Badge variant="secondary">{state.evolutionEvents.length}</Badge>}
+                    </div>
                     <Button variant="secondary" size="sm" onClick={state.refreshEvolution}>Refresh</Button>
                   </div>
-                  {state.evolutionEvents.length === 0 ? <EmptyTab icon={<SparkleIcon size={32} className="p-accent" />} text="No evolution events yet" /> : state.evolutionEvents.map(e => <EvolutionItem key={e.id} event={e} />)}
+                  {state.evolutionEvents.length === 0 ? (
+                    <EmptyTab icon={<SparkleIcon size={28} />} title="No evolution events yet" hint="Send a few messages to trigger evolution" />
+                  ) : state.evolutionEvents.map(e => <EvolutionItem key={e.id} event={e} />)}
                 </div>
               )}
 

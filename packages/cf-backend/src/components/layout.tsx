@@ -18,10 +18,7 @@ export default function Layout() {
   }, [isWorkspace]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = useCallback(() => {
-    setCollapsed(p => {
-      localStorage.setItem("proteus:sidebar", String(!p));
-      return !p;
-    });
+    setCollapsed(p => { localStorage.setItem("proteus:sidebar", String(!p)); return !p; });
   }, []);
 
   useEffect(() => {
@@ -34,58 +31,59 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-kumo-elevated text-kumo-default">
-      {/* Sidebar — darker than main content for depth */}
-      <aside className={`flex flex-col border-r border-kumo-line bg-kumo-base transition-all duration-200 ${collapsed ? "w-14" : "w-56"}`}
-        style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 8%)" }}>
-        <div className="p-3 pb-2">
+      <aside
+        className={`flex flex-col border-r p-divider transition-all duration-200 ${collapsed ? "w-[52px]" : "w-56"}`}
+        style={{ background: "color-mix(in oklch, var(--color-kumo-base) 95%, black 5%)" }}
+      >
+        {/* Brand */}
+        <div className="p-3 pb-1">
           {collapsed ? (
-            <div className="flex h-8 items-center justify-center">
-              <Button variant="ghost" shape="square" onClick={toggle} icon={<SidebarSimpleIcon size={16} />} aria-label="Expand sidebar" />
+            <div className="flex items-center justify-center py-1">
+              <button onClick={toggle} className="p-1.5 rounded-lg text-kumo-subtle hover:text-kumo-default hover:bg-kumo-elevated transition-colors" title="Expand (Cmd+B)">
+                <BrainIcon size={22} weight="duotone" className="p-accent" />
+              </button>
             </div>
           ) : (
-            <div className="flex h-8 items-center justify-between">
+            <div className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
-                <BrainIcon size={20} weight="duotone" className="p-accent animate-pulse-glow" />
-                <span className="text-lg font-bold tracking-tight">Proteus</span>
+                <BrainIcon size={20} weight="duotone" className="p-accent" />
+                <span className="text-base font-semibold tracking-tight">Proteus</span>
               </div>
-              <Button variant="ghost" shape="square" size="sm" onClick={toggle} icon={<SidebarSimpleIcon size={14} />} aria-label="Collapse sidebar" />
+              <Button variant="ghost" shape="square" size="sm" onClick={toggle} icon={<SidebarSimpleIcon size={14} />} aria-label="Collapse" />
             </div>
           )}
         </div>
 
-        <nav className="flex-1 px-2 py-1 space-y-0.5">
+        {/* Nav */}
+        <nav className="flex-1 px-2 py-2 space-y-1">
           {NAV_ITEMS.map(({ to, icon: Icon, label, ...rest }) => (
             <NavLink key={to} to={to} end={"end" in rest}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-all ${collapsed ? "justify-center px-0" : ""} ${
+                `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${collapsed ? "justify-center px-0" : ""} ${
                   isActive
-                    ? "p-accent-bg-subtle p-accent font-medium"
-                    : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-elevated"
+                    ? "bg-kumo-elevated text-kumo-default font-medium"
+                    : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-elevated/60"
                 }`
               }
             >
-              <Icon size={16} weight="bold" className="shrink-0" />
+              <Icon size={collapsed ? 20 : 16} weight="bold" className="shrink-0" />
               {!collapsed && <span>{label}</span>}
             </NavLink>
           ))}
         </nav>
 
-        <div className={`border-t border-kumo-line p-2 flex flex-col gap-2 ${collapsed ? "items-center" : ""}`}>
-          <div className={collapsed ? "" : "flex items-center justify-between"}>
-            <ModeToggle />
-            {!collapsed && <span className="text-xs text-kumo-inactive">v0.1</span>}
-          </div>
+        {/* Footer */}
+        <div className={`border-t p-divider p-2 flex flex-col gap-1.5 ${collapsed ? "items-center" : ""}`}>
+          <ModeToggle />
           {!collapsed && (
-            <div className="flex justify-center pb-1">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] text-kumo-inactive">v0.1</span>
               <PoweredByCloudflare href="https://developers.cloudflare.com/agents/" />
             </div>
           )}
         </div>
       </aside>
-
-      <main className="flex-1 overflow-hidden">
-        <Outlet />
-      </main>
+      <main className="flex-1 overflow-hidden"><Outlet /></main>
     </div>
   );
 }
