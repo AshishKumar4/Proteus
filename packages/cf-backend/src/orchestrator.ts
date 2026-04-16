@@ -119,51 +119,44 @@ export class OrchestratorAgent extends Think<Env> {
 
       return `${purpose}
 
-## Your environment
+## Tools (5 tools)
 
-You are a Proteus agent — a self-evolving AI running as a Cloudflare Durable Object. You have persistent state: a virtual filesystem, long-term memory with full-text search, and a tool evolution system that improves your capabilities over time.
+### execute_tools
+Write JavaScript to accomplish tasks. Your code runs in a sandboxed Worker with these APIs:
 
-## Tools
+**workspace.*** — file and shell operations on your persistent virtual filesystem:
+  workspace.readFile(path) → string
+  workspace.writeFile(path, content) → "ok"
+  workspace.readdir(path) → string[]
+  workspace.exists(path) → boolean
+  workspace.exec(command) → string — POSIX shell (cat, grep, find, sed, ls, head, tail, wc, mkdir, rm, cp, mv)
+  workspace.searchMemory(query) → results
+  workspace.saveNote(content) → "ok"
+  workspace.listTools() → tool list
+  workspace.createTool(name, description, code) → "ok"
 
-You have 13 tools:
+**tools.*** — your learned tools from the CraftStore (improves over time):
+  tools.<name>(args) — call any crafted tool by name
 
-### Filesystem tools (accept optional \`executor\` param)
-- **read** — read a file with line numbers (offset/limit for large files)
-- **write** — write content to a file (creates parent dirs)
-- **edit** — targeted search/replace in a file
-- **list** — list directory contents
-- **find** — find files by glob pattern
-- **grep** — search file contents with regex
-- **delete** — delete a file or directory
-- **shell_exec** — run a POSIX shell command (cat, grep, find, sed, ls, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq; pipes and redirects supported)
+Use Promise.all for parallel operations. Return a value to see the result.
 
-By default these operate on your workspace (DO-local SqliteFS). Pass \`executor: "nimbus"\` or \`executor: "sandbox"\` to target a remote execution environment when available.
+### run
+Run a shell command directly: run({ command: "ls -la" })
+Supports: cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq.
+Pipes (|) and redirects (>, >>) work. Pass executor to target nimbus/sandbox.
 
-### Memory tools
-- **save_note** — append a note to long-term memory (MEMORY.md, FTS-indexed)
-- **search_memory** — full-text search over long-term memory
+### explore
+MCTS tree search for complex subproblems. Use for architecture decisions or multi-step problem solving.
 
-### Meta tools
-- **list_tools** — list all built-in and crafted tools
-- **execute** — run JavaScript code in a sandboxed environment with \`workspace.*\`, \`nimbus.*\`, \`sandbox.*\`, \`laptop.*\` APIs (for complex multi-step orchestration)
-- **explore** — MCTS tree search for complex subproblems (architecture decisions, multi-step problem solving)
+### save_note
+Save a note to long-term memory (FTS-indexed). Quick persist — no code needed.
+
+### search_memory
+Full-text search over long-term memory. Quick recall — no code needed.
 
 ## Evolution
-
-Your capabilities improve automatically:
-- **Turn-level**: quality scoring and pattern extraction after each response
-- **Session-level**: reflection and consolidation every ~5 turns
-- **Lifetime**: MCTS exploration discovers better approaches
-- **Tool crafting**: good patterns are automatically extracted into reusable CraftStore tools
-
-## Guidelines
-
-- Use direct tools (read, write, grep, shell_exec, etc.) for simple operations
-- Use execute for complex multi-step JS orchestration
-- Use explore for genuinely difficult multi-path problems
-- Save important information with save_note — recall with search_memory
-- Summarize what you did after using tools
-- Be honest: you can read/write files, run shell commands, and search memory, but you cannot access the internet, deploy code, or run servers`;
+Your capabilities improve automatically via CraftStore — good patterns become tools.* APIs inside execute_tools.
+Summarize what you did after using tools.`;
     } catch {
       return "You are a helpful coding assistant.";
     }
@@ -176,34 +169,67 @@ Your capabilities improve automatically:
     const env = this.env as Env & Record<string, unknown>;
     const tools: ToolSet = {};
 
-    // Helper: resolve an executor provider by name, falling back to workspace
     const router = this.rt.executionRouter;
-    const defaultProvider = router?.getProvider("workspace");
-    function getExec(name?: string) {
-      if (!name || name === "workspace") return defaultProvider;
-      return router?.getProvider(name) ?? defaultProvider;
-    }
-    // Default workspace resources for direct tools
-    const vfs = this.rt.storage.vfs;
     const memory = this.rt.memory;
     const craftStore = this.rt.craftStore;
     const shell = createShell(this.rt.sqliteFS);
 
-    // ── execute: codemode sandbox ────────────────────────────────
+    // ── 1. execute_tools: codemode sandbox with workspace.* + tools.* ──
     if (env.LOADER) {
       try {
         const providers = router?.getProviders() ?? [];
-        tools.execute = createExecuteTool({
-          tools: {},
+
+        // Inject crafted tools so they're callable as tools.* inside codemode
+        const craftedToolSet: Record<string, { description: string; execute: Function }> = {};
+        try {
+          const crafted = craftStore.list();
+          for (const t of crafted) {
+            if (!t.code || t.code.startsWith("//")) continue;
+            try {
+              craftedToolSet[t.name] = {
+                description: t.description || `Crafted tool: ${t.name}`,
+                execute: new Function("return " + t.code)(),
+              };
+            } catch { /* skip broken tools */ }
+          }
+        } catch { /* CraftStore may not be initialized yet */ }
+
+        tools.execute_tools = createExecuteTool({
+          tools: craftedToolSet,
           providers,
           loader: env.LOADER as WorkerLoader,
         });
       } catch (err) {
         console.warn("[proteus] createExecuteTool failed:", (err as Error).message);
       }
+    } else {
+      console.warn("[proteus] LOADER binding unavailable — execute_tools not available");
     }
 
-    // ── explore: MCTS ────────────────────────────────────────────
+    // ── 2. run: shell command with optional executor routing ──
+    tools.run = tool({
+      description: "Run a shell command. Supports: cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq. Pipes and redirects work.",
+      inputSchema: jsonSchema<{ command: string; executor?: string }>({
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Shell command to run" },
+          executor: { type: "string", description: "Target executor: workspace (default), nimbus, sandbox" },
+        },
+        required: ["command"],
+      }),
+      execute: async (args: { command: string; executor?: string }) => {
+        if (args.executor && args.executor !== "workspace") {
+          const exec = router?.getProvider(args.executor);
+          if (exec?.tools.exec) return exec.tools.exec.execute(args.command) as Promise<string>;
+          return `Executor "${args.executor}" not available.`;
+        }
+        const result = await shell.exec(args.command);
+        if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
+        return result.stdout || "(no output)";
+      },
+    });
+
+    // ── 3. explore: MCTS ──
     tools.explore = tool({
       description: "MCTS tree search for complex subproblems. Spawns branches, evaluates approaches, returns the best.",
       inputSchema: jsonSchema<{ task: string; budget?: number }>({
@@ -242,190 +268,9 @@ Your capabilities improve automatically:
       },
     });
 
-    // ── Direct filesystem + shell tools ──────────────────────────
-    // Each accepts optional `executor` param to route through a specific
-    // provider (nimbus, sandbox, laptop). Default: workspace (SqliteFS).
-    // These names overwrite Think's built-in workspace tools.
-
-    tools.read = tool({
-      description: "Read a file. Returns content with line numbers.",
-      inputSchema: jsonSchema<{ path: string; offset?: number; limit?: number; executor?: string }>({
-        type: "object",
-        properties: {
-          path: { type: "string", description: "File path" },
-          offset: { type: "number", description: "1-indexed start line" },
-          limit: { type: "number", description: "Max lines to return" },
-          executor: { type: "string", description: "Executor name (workspace, nimbus, sandbox, laptop). Default: workspace." },
-        },
-        required: ["path"],
-      }),
-      execute: async (args: { path: string; offset?: number; limit?: number; executor?: string }) => {
-        const exec = getExec(args.executor);
-        if (exec?.tools.readFile) {
-          const content = await exec.tools.readFile.execute(args.path) as string;
-          if (content.startsWith("File not found")) return content;
-          const lines = content.split("\n");
-          const start = Math.max(0, (args.offset ?? 1) - 1);
-          const end = args.limit ? start + args.limit : lines.length;
-          return lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n") || "(empty file)";
-        }
-        const content = await vfs.readFile(args.path, { encoding: "utf8" }) as string | null;
-        if (content === null) return `File not found: ${args.path}`;
-        const lines = content.split("\n");
-        const start = Math.max(0, (args.offset ?? 1) - 1);
-        const end = args.limit ? start + args.limit : lines.length;
-        return lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n") || "(empty file)";
-      },
-    });
-
-    tools.write = tool({
-      description: "Write content to a file. Creates parent directories.",
-      inputSchema: jsonSchema<{ path: string; content: string; executor?: string }>({
-        type: "object",
-        properties: {
-          path: { type: "string", description: "File path" },
-          content: { type: "string", description: "Content to write" },
-          executor: { type: "string", description: "Executor (default: workspace)" },
-        },
-        required: ["path", "content"],
-      }),
-      execute: async (args: { path: string; content: string; executor?: string }) => {
-        const exec = getExec(args.executor);
-        if (exec?.tools.writeFile) return exec.tools.writeFile.execute(args.path, args.content) as Promise<string>;
-        await vfs.writeFile(args.path, args.content);
-        if (args.path.startsWith("memory/")) await memory.index(args.path);
-        return `Written ${args.content.length} bytes to ${args.path}`;
-      },
-    });
-
-    tools.edit = tool({
-      description: "Targeted string replacement in a file.",
-      inputSchema: jsonSchema<{ path: string; old_string: string; new_string: string; executor?: string }>({
-        type: "object",
-        properties: {
-          path: { type: "string", description: "File path" },
-          old_string: { type: "string", description: "Exact text to find (empty = create new file)" },
-          new_string: { type: "string", description: "Replacement text" },
-          executor: { type: "string", description: "Executor (default: workspace)" },
-        },
-        required: ["path", "old_string", "new_string"],
-      }),
-      execute: async (args: { path: string; old_string: string; new_string: string; executor?: string }) => {
-        const exec = getExec(args.executor);
-        const readFn = exec?.tools.readFile?.execute ?? (async (p: unknown) => await vfs.readFile(String(p), { encoding: "utf8" }));
-        const writeFn = exec?.tools.writeFile?.execute ?? (async (p: unknown, c: unknown) => { await vfs.writeFile(String(p), String(c)); return `Written to ${p}`; });
-
-        if (!args.old_string) {
-          await writeFn(args.path, args.new_string);
-          return `Created ${args.path} (${args.new_string.length} bytes)`;
-        }
-        const content = await readFn(args.path) as string | null;
-        if (!content || content.startsWith?.("File not found")) return `File not found: ${args.path}`;
-        if (!content.includes(args.old_string)) return `old_string not found in ${args.path}`;
-        const count = content.split(args.old_string).length - 1;
-        if (count > 1) return `Found ${count} matches — provide more context to identify a unique match`;
-        await writeFn(args.path, content.replace(args.old_string, args.new_string));
-        return `Edited ${args.path}`;
-      },
-    });
-
-    tools.list = tool({
-      description: "List files and directories at a path.",
-      inputSchema: jsonSchema<{ path?: string; executor?: string }>({
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Directory path (default: /)" },
-          executor: { type: "string", description: "Executor (default: workspace)" },
-        },
-      }),
-      execute: async (args: { path?: string; executor?: string }) => {
-        const exec = getExec(args.executor);
-        if (exec?.tools.readdir) {
-          const entries = await exec.tools.readdir.execute(args.path || "/");
-          return Array.isArray(entries) ? entries.join("\n") : String(entries);
-        }
-        const result = await shell.exec(`ls -la ${args.path || "/"}`);
-        return result.stdout || "(empty directory)";
-      },
-    });
-
-    tools.find = tool({
-      description: "Find files matching a glob pattern.",
-      inputSchema: jsonSchema<{ pattern: string; executor?: string }>({
-        type: "object",
-        properties: {
-          pattern: { type: "string", description: 'Glob pattern (e.g. "**/*.ts")' },
-          executor: { type: "string", description: "Executor (default: workspace)" },
-        },
-        required: ["pattern"],
-      }),
-      execute: async (args: { pattern: string; executor?: string }) => {
-        const exec = getExec(args.executor);
-        if (exec?.tools.exec) return exec.tools.exec.execute(`find / -name '${args.pattern}'`) as Promise<string>;
-        const result = await shell.exec(`find / -name '${args.pattern}'`);
-        return result.stdout || "No files found.";
-      },
-    });
-
-    tools.grep = tool({
-      description: "Search file contents using regex. Returns matching lines with paths and line numbers.",
-      inputSchema: jsonSchema<{ pattern: string; path?: string; executor?: string }>({
-        type: "object",
-        properties: {
-          pattern: { type: "string", description: "Regex or fixed string" },
-          path: { type: "string", description: "Directory to search (default: /)" },
-          executor: { type: "string", description: "Executor (default: workspace)" },
-        },
-        required: ["pattern"],
-      }),
-      execute: async (args: { pattern: string; path?: string; executor?: string }) => {
-        const exec = getExec(args.executor);
-        if (exec?.tools.exec) return exec.tools.exec.execute(`grep -rn '${args.pattern}' ${args.path || "/"}`) as Promise<string>;
-        const result = await shell.exec(`grep -rn '${args.pattern}' ${args.path || "/"}`);
-        return result.stdout || "No matches found.";
-      },
-    });
-
-    tools.delete = tool({
-      description: "Delete a file or directory.",
-      inputSchema: jsonSchema<{ path: string; executor?: string }>({
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path to delete" },
-          executor: { type: "string", description: "Executor (default: workspace)" },
-        },
-        required: ["path"],
-      }),
-      execute: async (args: { path: string; executor?: string }) => {
-        const exec = getExec(args.executor);
-        if (exec?.tools.exec) return exec.tools.exec.execute(`rm -rf ${args.path}`) as Promise<string>;
-        await vfs.unlink(args.path);
-        return `Deleted ${args.path}`;
-      },
-    });
-
-    tools.shell_exec = tool({
-      description: "Run a POSIX shell command. Supports cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq. Pipes (|) and redirects (>, >>) work.",
-      inputSchema: jsonSchema<{ command: string; executor?: string }>({
-        type: "object",
-        properties: {
-          command: { type: "string", description: "Shell command" },
-          executor: { type: "string", description: "Executor (default: workspace)" },
-        },
-        required: ["command"],
-      }),
-      execute: async (args: { command: string; executor?: string }) => {
-        const exec = getExec(args.executor);
-        if (exec?.tools.exec) return exec.tools.exec.execute(args.command) as Promise<string>;
-        const result = await shell.exec(args.command);
-        if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
-        return result.stdout || "(no output)";
-      },
-    });
-
-    // ── Memory tools ─────────────────────────────────────────────
+    // ── 4. save_note: quick memory persist ──
     tools.save_note = tool({
-      description: "Save a note to long-term memory (MEMORY.md). FTS-indexed for later search.",
+      description: "Save a note to long-term memory (FTS-indexed for later search).",
       inputSchema: jsonSchema<{ content: string }>({
         type: "object",
         properties: { content: { type: "string", description: "Note content" } },
@@ -439,8 +284,9 @@ Your capabilities improve automatically:
       },
     });
 
+    // ── 5. search_memory: quick memory recall ──
     tools.search_memory = tool({
-      description: "Search long-term memory using full-text search. Returns matching passages.",
+      description: "Full-text search over long-term memory. Returns matching passages.",
       inputSchema: jsonSchema<{ query: string }>({
         type: "object",
         properties: { query: { type: "string", description: "Search query" } },
@@ -453,19 +299,7 @@ Your capabilities improve automatically:
       },
     });
 
-    tools.list_tools = tool({
-      description: "List all available tools including dynamically crafted ones.",
-      inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
-      execute: async () => {
-        const builtIn = ["execute", "explore", "read", "write", "edit", "list", "find", "grep", "delete", "shell_exec", "save_note", "search_memory", "list_tools"];
-        const crafted = craftStore.list();
-        const lines = builtIn.map(n => `[built-in] ${n}`);
-        for (const t of crafted) lines.push(`[crafted] ${t.name}: ${t.description}`);
-        return lines.join("\n");
-      },
-    });
-
-    console.log(`[proteus] getTools() returning: ${Object.keys(tools).join(", ")}`);
+    console.log(`[proteus] getTools() returning 5 tools: ${Object.keys(tools).join(", ")}`);
     return tools;
     } catch (err) {
       console.error("[proteus] getTools() FAILED:", err);
@@ -675,11 +509,7 @@ Your capabilities improve automatically:
       name: t.name, description: t.description, scope: t.scope,
     }));
     return {
-      builtIn: [
-        "execute", "explore",
-        "read", "write", "edit", "list", "find", "grep", "delete",
-        "shell_exec", "save_note", "search_memory", "list_tools",
-      ],
+      builtIn: ["execute_tools", "run", "explore", "save_note", "search_memory"],
       crafted,
     };
   }
@@ -703,23 +533,24 @@ Your capabilities improve automatically:
 
   @callable() async getToolDescriptions() {
     const builtIn = [
-      { name: "execute", description: "Run JavaScript in a sandboxed codemode environment with workspace.*, nimbus.*, sandbox.*, laptop.* APIs." },
+      { name: "execute_tools", description: "Write JS to accomplish tasks. workspace.* for files/shell, tools.* for learned patterns. Runs in sandboxed Worker." },
+      { name: "run", description: "Run a POSIX shell command (cat, grep, find, sed, ls, etc.). Optional executor param for nimbus/sandbox." },
       { name: "explore", description: "MCTS tree search for complex subproblems. Spawns branches, evaluates, returns the best approach." },
-      { name: "read", description: "Read a file with line numbers. Optional executor param for remote targets." },
-      { name: "write", description: "Write content to a file. Creates parent directories. Optional executor param." },
-      { name: "edit", description: "Targeted string replacement in a file. Optional executor param." },
-      { name: "list", description: "List files and directories. Optional executor param." },
-      { name: "find", description: "Find files matching a glob pattern. Optional executor param." },
-      { name: "grep", description: "Search file contents with regex. Returns matches with line numbers. Optional executor param." },
-      { name: "delete", description: "Delete a file or directory. Optional executor param." },
-      { name: "shell_exec", description: "Run a POSIX shell command (cat, grep, find, sed, ls, etc.). Optional executor param." },
-      { name: "save_note", description: "Save a note to long-term memory (MEMORY.md). FTS-indexed." },
-      { name: "search_memory", description: "Search long-term memory using full-text search." },
-      { name: "list_tools", description: "List all available tools including dynamically crafted ones." },
+      { name: "save_note", description: "Save a note to long-term memory (MEMORY.md). FTS-indexed for later search." },
+      { name: "search_memory", description: "Search long-term memory using full-text search. Returns matching passages." },
     ];
-    const crafted = this.rt.craftStore.list().map(t => ({
-      name: t.name, description: t.description || "Crafted tool", isLearned: true,
-    }));
+    const craftedRaw = this.rt.craftStore.list();
+    const crafted = craftedRaw.map(t => {
+      const scoreRow = this.sql<{ score: number; uses: number }>`
+        SELECT score, uses FROM craft_scores WHERE tool_name = ${t.name} LIMIT 1`;
+      return {
+        name: t.name,
+        description: t.description || "Crafted tool",
+        isLearned: true,
+        qualityScore: scoreRow[0]?.score ?? 0.5,
+        usageCount: scoreRow[0]?.uses ?? 0,
+      };
+    });
     const executors = this.rt.executionRouter?.listExecutors() ?? [];
     return { builtIn, crafted, executors };
   }

@@ -141,7 +141,6 @@ body { background: var(--c-bg); color: var(--c-text); }
 .p-nav-active {
   background: var(--c-accent-subtle);
   color: var(--c-accent-fg);
-  border-left: 2px solid var(--c-accent);
 }
 
 .p-row-hover:hover { background: var(--c-accent-subtle); }
