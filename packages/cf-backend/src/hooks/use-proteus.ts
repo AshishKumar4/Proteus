@@ -159,6 +159,25 @@ export function useProteus(agentId?: string) {
     agent.call("getMemoryContent", [])
       .then(c => { setMemoryContent(c as string ?? ""); })
       .catch(() => {});
+    // Refresh tools so newly-crafted tools (via workspace.createTool) appear
+    // in the Tools pane without reconnecting. Uses the same mapping as loadAllData.
+    agent.call("getToolDescriptions", [])
+      .then((result) => {
+        const r = result as {
+          builtIn: Array<{ name: string; description: string }>;
+          crafted: Array<{ name: string; description: string; qualityScore?: number; usageCount?: number }>;
+        };
+        const builtInTools: ToolInfo[] = r.builtIn.map(t => ({
+          name: t.name, description: t.description, scope: "local" as const,
+          qualityScore: 1, usageCount: 0, lastUsed: "",
+        }));
+        const craftedTools: ToolInfo[] = r.crafted.map(t => ({
+          name: t.name, description: t.description, scope: "global" as const,
+          qualityScore: t.qualityScore ?? 0.5, usageCount: t.usageCount ?? 0, lastUsed: "",
+        }));
+        setTools([...builtInTools, ...craftedTools]);
+      })
+      .catch(() => {});
     // Server is the single source of truth for activity + evolution logs.
     // Only client-generated entries (connection lifecycle) are preserved.
     agent.call("getLogs", [100])
@@ -218,15 +237,24 @@ export function useProteus(agentId?: string) {
         setTools([...builtInTools, ...craftedTools]);
       })
       .catch(() => {
-        // Fallback to getToolList
+        // Fallback to getToolList — note that crafted tools from getToolList come
+        // with scope: 'local' from CraftStore, but the Tools pane uses scope
+        // === 'global' to render the "Learned" badge, so we re-tag them here.
         agent.call("getToolList", [])
           .then((result) => {
-            const r = result as { builtIn: string[]; crafted: ToolInfo[] };
+            const r = result as {
+              builtIn: string[];
+              crafted: Array<{ name: string; description: string; scope: string; qualityScore: number; usageCount: number }>;
+            };
             const builtInTools: ToolInfo[] = r.builtIn.map(name => ({
               name, description: "Built-in tool", scope: "local" as const,
               qualityScore: 1, usageCount: 0, lastUsed: "",
             }));
-            setTools([...builtInTools, ...r.crafted]);
+            const craftedTools: ToolInfo[] = r.crafted.map(t => ({
+              name: t.name, description: t.description, scope: "global" as const,
+              qualityScore: t.qualityScore ?? 0.5, usageCount: t.usageCount ?? 0, lastUsed: "",
+            }));
+            setTools([...builtInTools, ...craftedTools]);
           })
           .catch(() => {});
       });
