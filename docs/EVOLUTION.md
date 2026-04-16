@@ -58,7 +58,12 @@ Fires after every chat response via `onChatResponse()`. Runs asynchronously (fir
 
 ## Session-Level Evolution
 
-Fires every 5 turns. The counter resets after each session reflection.
+Session reflection fires via two independent paths:
+
+1. **Orchestrator path** (`orchestrator.ts:505`): The orchestrator calls `engine.onSessionComplete()` every `SESSION_REFLECTION_INTERVAL` (5) turns, passing accumulated turn data. This resets its own counter.
+2. **Engine-internal path** (`engine.ts:130`): The engine's `onTurnComplete()` tracks `turnsSinceReflection` and triggers its own `onSessionReflection()` every `sessionReflectionInterval` (default 10) turns.
+
+Both paths call the same reflection logic; the orchestrator path fires more frequently.
 
 **Session reflection**: An LLM call analyzes the accumulated turns for patterns, writing a structured reflection to `memory/MEMORY.md`.
 
@@ -106,7 +111,7 @@ All evolution activity is persisted to the `evolution_events` SQL table:
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | TEXT PK | Random hex ID |
-| `type` | TEXT | `reflection`, `craft_discovered`, `scaffold_proposed`, `consolidation`, `mcts_started`, `mcts_complete` |
+| `type` | TEXT | `turn_complete`, `reflection`, `craft_discovered`, `scaffold_proposed`, `consolidation`, `mcts_started`, `mcts_complete` |
 | `message` | TEXT | Human-readable description |
 | `data` | TEXT | JSON payload (optional) |
 | `created_at` | INTEGER | Epoch milliseconds |

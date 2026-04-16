@@ -1,5 +1,7 @@
 # Nimbus Integration Plan
 
+> **Note:** This is a design plan. The current implementation differs — see "Current Implementation" below.
+
 > Nimbus: cloud-native development environment on Cloudflare Workers.
 > Repository: github.com/AshishKumar4/Nimbus
 
@@ -62,7 +64,28 @@ Demand-paged with write-back caching:
 - **Dev tools**: node, npm, npx, esbuild, vite, git (full client)
 - **System**: env, export, ps, top, kill, date, id, hostname, sleep, history, alias
 
-## 2. Integration Architecture
+## 2. Current Implementation
+
+The Nimbus executor is implemented in `packages/core/src/execution/nimbus.ts` as a single `createNimbusExecutor()` function. It exposes 8 tools under the `nimbus` namespace:
+
+| Tool | Description |
+|------|-------------|
+| `nimbus.exec` | Run shell command (60+ POSIX, npm, node, git, esbuild, vite) |
+| `nimbus.readFile` | Read file from Nimbus filesystem |
+| `nimbus.writeFile` | Write file to Nimbus filesystem |
+| `nimbus.readdir` | List directory contents |
+| `nimbus.exists` | Check if path exists |
+| `nimbus.stat` | Get file/directory metadata |
+| `nimbus.mkdir` | Create directory (recursive) |
+| `nimbus.rm` | Delete a file |
+
+**Wrangler binding**: The DO binding is named `NIMBUS_SESSION` (currently commented out in `wrangler.jsonc:22`). Communication is via `NimbusStub._rpc*` methods. The `_rpcExec` method is optional — not all Nimbus builds expose it.
+
+**Capabilities**: `javascript`, `typescript`, `shell`, `npm`, `git`, `fs_owned`, `net_outbound`, `net_inbound`, `process_spawn`, `process_long`.
+
+**File sync**: Not yet implemented. The plan below describes the intended design.
+
+## 3. Integration Architecture (Plan)
 
 ### Design Decision: Nimbus as a DO Binding, Not a Replacement
 
@@ -105,22 +128,15 @@ graph TB
     NimbusShell -->|workspace files| NimbusVFS
 ```
 
-### Tool Design
+### Tool Design (Original Plan)
 
-Add 4 new tools that delegate to Nimbus:
+The original plan called for 4 separate top-level tools. The actual implementation uses 8 namespace tools under `nimbus.*` (see Current Implementation above). The namespace approach integrates with the `ExecutionRouter` and `execute_tools` codemode pattern rather than exposing separate top-level tools:
 
 ```typescript
-// nimbus_exec — run any shell command in the Nimbus environment
-nimbus_exec({ command: "npm install express && node server.js" })
-
-// nimbus_node — run a Node.js script (full require, full fs)
-nimbus_node({ code: "const fs = require('fs'); ..." })
-
-// nimbus_npm — package management
-nimbus_npm({ command: "install", args: ["express", "typescript", "--save-dev"] })
-
-// nimbus_git — git operations
-nimbus_git({ command: "clone https://github.com/user/repo.git /workspace/repo" })
+// Inside execute_tools codemode, the agent calls:
+await nimbus.exec("npm install express && node server.js");
+await nimbus.readFile("/workspace/package.json");
+await nimbus.writeFile("/workspace/config.json", JSON.stringify(config));
 ```
 
 ### Communication Flow
@@ -149,7 +165,7 @@ sequenceDiagram
     "bindings": [
       { "class_name": "OrchestratorAgent", "name": "OrchestratorAgent" },
       { "class_name": "ExplorationAgent", "name": "ExplorationAgent" },
-      { "class_name": "NimbusSession", "name": "NimbusSession" }
+      { "class_name": "NimbusSession", "name": "NIMBUS_SESSION" }
     ]
   },
   "worker_loaders": [{ "binding": "LOADER" }]

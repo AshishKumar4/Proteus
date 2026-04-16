@@ -82,7 +82,7 @@ async () => {
 
 ### Fallback (no LOADER binding)
 
-When the `LOADER` Worker Loader binding is unavailable (local dev without `worker_loaders`), `execute_tools` is not registered. The LLM falls back to `run` for shell operations and `save_note`/`search_memory` for memory.
+When the `LOADER` Worker Loader binding is unavailable (local dev without `worker_loaders`), `execute_tools` is still registered but uses `new Function()` instead of the sandboxed codemode LOADER. The `workspace.*` APIs remain available; only the isolation boundary is weaker.
 
 ## run — Shell Command
 
@@ -115,9 +115,9 @@ Crafted tools are discovered, scored, and retired automatically:
 
 1. **Extract**: `EvolutionEngine.extractPattern()` asks the LLM to generalize successful tool-call patterns
 2. **Score**: `updateCraftScores()` updates EMA scores (α=0.3) after each turn that uses crafted tools
-3. **Filter**: `loadCraftedTools()` skips tools below `minEffectiveScoreForInjection` (0.2)
-4. **Inject**: Surviving tools are passed to `createExecuteTool` as the `tools` parameter
-5. **Consolidate**: `periodicCraftConsolidation()` retires tools with `effectiveScore < 0.1`
+3. **Load**: `craftStore.list()` reads all crafted tools; only those with missing or comment-only `code` are skipped
+4. **Inject**: Loaded tools are passed to `createExecuteTool` as the `tools` parameter
+5. **Consolidate**: `periodicCraftConsolidation()` retires tools with `effectiveScore < 0.1` (with non-empty guard)
 
 ## Token Budget
 

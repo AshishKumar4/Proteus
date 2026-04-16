@@ -69,12 +69,12 @@ Unlike ChatGPT or Claude (which start fresh each conversation), a Proteus agent 
 
 The model selector supports switching between models mid-conversation:
 
-| Model | Characteristics | Best For |
-|-------|----------------|----------|
-| Kimi K2.5 | Reasoning model, thinks before responding | Complex problems, CTF challenges, algorithm design |
-| Llama 4 Scout | Fast, direct responses | Quick tasks, simple questions, iteration |
+| Model | Description | Best For |
+|-------|-------------|----------|
+| Kimi K2.5 | Advanced reasoning model with extended thinking | Complex problems, CTF challenges, algorithm design |
+| Llama 4 Scout 17B | General-purpose instruction model | Quick tasks, simple questions, iteration |
 
-Different models produce different evolution trajectories. Kimi K2.5 tends to extract more complex tool patterns; Llama 4 Scout evolves faster but with simpler patterns.
+Different models produce different evolution trajectories. Kimi K2.5 tends to extract more complex tool patterns; Llama 4 Scout produces different evolution patterns.
 
 ### With Nimbus: Full Development Environment
 
@@ -97,7 +97,7 @@ The CLI version runs locally with bun:sqlite, providing the same core capabiliti
 ```bash
 proteus create dev-helper --purpose "A TypeScript development assistant"
 proteus chat dev-helper
-# Agent has access to execute_code, save_note, search_memory
+# Agent has access to execute_tools, run, explore, save_note, search_memory
 # Evolution happens locally — crafted tools persist in ~/.proteus/dev-helper/agent.db
 ```
 
@@ -189,7 +189,7 @@ graph TB
 | **Self-Refine** (Madaan 2023) | No | No | Iterative refinement | No | No |
 | **OMNI** (Zhang 2024) | Tool creation | No | Yes | No | No |
 | **Tree of Thoughts** (Yao 2023) | No | BFS/DFS | No | No | No |
-| **Proteus** | CraftStore + EMA | MCTS + Facets | Scaffold mutation | 29 Lean 4 theorems | DO SQLite |
+| **Proteus** | CraftStore + EMA | MCTS + Facets | Scaffold mutation | ~60 Lean 4 theorems (0 sorry) | DO SQLite |
 
 ### What's Genuinely Novel
 
