@@ -23,7 +23,7 @@ import { MCTSTree } from "@/components/mcts-tree";
 import { ConnectionIndicator } from "@/components/connection-indicator";
 import type { MCTSNode } from "@/lib/protocol";
 
-const TABS = ["Identity", "Tools", "Memory", "MCTS Tree", "Evolution", "Logs"] as const;
+const TABS = ["Identity", "Tools", "Memory", "MCTS Tree", "Evolution", "Executors", "Logs"] as const;
 type Tab = (typeof TABS)[number];
 const MODELS = [
   { id: "@cf/moonshotai/kimi-k2.5", label: "Kimi K2.5" },
@@ -379,6 +379,143 @@ function ModelSelector({ current, onChange }: { current: string; onChange: (id: 
   );
 }
 
+/* ── Executors tab ──────────────────────────────────────────────── */
+
+interface ExecutorOutput {
+  id: string; command: string; stdout: string; stderr: string; exit_code: number; created_at: number;
+}
+
+function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
+  executors: Array<{ name: string; kind: string; capabilities: string[]; available: boolean }>;
+  outputs: Map<string, ExecutorOutput[]>;
+  onExecute: (id: string, cmd: string) => Promise<unknown>;
+  onBrowse: (id: string, path: string) => Promise<unknown>;
+}) {
+  const [activeExec, setActiveExec] = useState(executors[0]?.name ?? "workspace");
+  const [cmdInput, setCmdInput] = useState("");
+  const [running, setRunning] = useState(false);
+  const [fileEntries, setFileEntries] = useState<string[]>([]);
+  const [filePath, setFilePath] = useState("/");
+  const termEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { termEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [outputs, activeExec]);
+
+  const handleSubmit = useCallback(async () => {
+    const cmd = cmdInput.trim();
+    if (!cmd || running) return;
+    setCmdInput("");
+    setRunning(true);
+    try { await onExecute(activeExec, cmd); } catch { /* handled by hook */ }
+    finally { setRunning(false); }
+  }, [cmdInput, running, activeExec, onExecute]);
+
+  const browseTo = useCallback(async (path: string) => {
+    setFilePath(path);
+    try {
+      const result = await onBrowse(activeExec, path) as { entries?: unknown; error?: string };
+      if (result.entries) {
+        const entries = Array.isArray(result.entries) ? result.entries.map(String) : String(result.entries).split('\n').filter(Boolean);
+        setFileEntries(entries);
+      }
+    } catch { setFileEntries(["(error loading files)"]); }
+  }, [activeExec, onBrowse]);
+
+  useEffect(() => { browseTo("/"); }, [activeExec]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const activeOutputs = outputs.get(activeExec) ?? [];
+
+  return (
+    <div className="animate-fade-in h-full flex flex-col gap-3">
+      {/* Executor tabs */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {executors.map(exec => (
+          <button key={exec.name} onClick={() => setActiveExec(exec.name)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeExec === exec.name ? "p-elevated p-text" : "p-text-2 hover:p-elevated/50"
+            }`}
+          >
+            <span className={`size-1.5 rounded-full ${exec.available ? "bg-green-500" : "bg-zinc-500"}`} />
+            {exec.name}
+          </button>
+        ))}
+        {executors.length === 0 && <span className="text-xs p-text-3">No executors registered</span>}
+      </div>
+
+      {/* Terminal + Files split */}
+      <div className="flex-1 flex gap-3 min-h-0">
+        {/* Terminal */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <TerminalIcon size={14} className="p-text-2" />
+            <span className="text-xs font-medium p-text">Terminal</span>
+            <Badge variant="secondary">{activeOutputs.length}</Badge>
+          </div>
+
+          <div className="flex-1 overflow-y-auto rounded-lg p-elevated border p-border p-2 font-mono text-xs space-y-2 min-h-[200px]">
+            {activeOutputs.length === 0 && (
+              <span className="p-text-3">No commands executed yet. Type a command below.</span>
+            )}
+            {activeOutputs.map(entry => (
+              <div key={entry.id}>
+                <div className="flex items-center gap-1 p-text-2">
+                  <span style={{ color: "var(--c-accent)" }}>$</span>
+                  <span>{entry.command}</span>
+                  <span className="ml-auto p-text-3 text-[10px]">{new Date(entry.created_at).toLocaleTimeString()}</span>
+                </div>
+                {entry.stdout && <pre className="p-text whitespace-pre-wrap mt-0.5 ml-3">{entry.stdout}</pre>}
+                {entry.stderr && entry.exit_code !== 0 && <pre className="text-red-400 whitespace-pre-wrap mt-0.5 ml-3">{entry.stderr}</pre>}
+              </div>
+            ))}
+            <div ref={termEndRef} />
+          </div>
+
+          {/* Command input */}
+          <div className="flex items-center gap-2 mt-2 p-elevated border p-border rounded-lg px-3 py-2">
+            <span className="p-text-2 text-xs font-mono">{activeExec} $</span>
+            <input
+              value={cmdInput}
+              onChange={e => setCmdInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSubmit(); } }}
+              placeholder="Type a command..."
+              disabled={running}
+              className="flex-1 bg-transparent text-xs font-mono p-text focus:outline-none placeholder:p-text-3"
+            />
+            {running && <Loader size="sm" />}
+          </div>
+        </div>
+
+        {/* File browser */}
+        <div className="w-48 flex flex-col min-h-0">
+          <div className="flex items-center gap-2 mb-2">
+            <FolderOpenIcon size={14} className="p-text-2" />
+            <span className="text-xs font-medium p-text">Files</span>
+          </div>
+          <div className="flex-1 overflow-y-auto rounded-lg p-elevated border p-border p-2 text-xs space-y-0.5">
+            <button onClick={() => browseTo("/")} className="p-text-2 hover:p-text text-[11px] block mb-1">/</button>
+            {filePath !== "/" && (
+              <button onClick={() => browseTo(filePath.split("/").slice(0, -1).join("/") || "/")}
+                className="p-text-3 hover:p-text text-[11px] block">..</button>
+            )}
+            {fileEntries.map((entry, i) => {
+              const isDir = entry.startsWith("d ") || entry.endsWith("/");
+              const name = entry.replace(/^[d-] /, "").replace(/\/$/, "");
+              return (
+                <button key={i}
+                  onClick={() => isDir ? browseTo(`${filePath === "/" ? "" : filePath}/${name}`) : undefined}
+                  className={`block w-full text-left truncate text-[11px] ${isDir ? "p-text hover:underline cursor-pointer" : "p-text-2"}`}
+                >
+                  {isDir ? "📁 " : "📄 "}{name}
+                </button>
+              );
+            })}
+            {fileEntries.length === 0 && <span className="p-text-3">(empty)</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LogsTab({ logs, connectionStatus }: { logs: LogEntry[]; connectionStatus: string }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs.length]);
@@ -624,6 +761,15 @@ export default function WorkspacePage() {
               {/* Evolution */}
               {activeTab === "Evolution" && (
                 <EvolutionTab events={state.evolutionEvents} onRefresh={state.refreshEvolution} />
+              )}
+
+              {activeTab === "Executors" && (
+                <ExecutorsTab
+                  executors={state.executors}
+                  outputs={state.executorOutputs}
+                  onExecute={state.executeInExecutor}
+                  onBrowse={(id: string, path: string) => state.rpc("getExecutorFiles", [id, path])}
+                />
               )}
 
               {activeTab === "Logs" && <LogsTab logs={state.logs} connectionStatus={state.connectionStatus} />}
