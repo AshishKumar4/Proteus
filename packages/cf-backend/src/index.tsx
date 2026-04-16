@@ -2,7 +2,6 @@ import "./index.css";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 
-document.documentElement.setAttribute("data-mode", "dark");
-
+// Theme is initialized in index.html <head> to prevent flash
 const root = createRoot(document.getElementById("root")!);
 root.render(<App />);
