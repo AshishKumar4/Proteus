@@ -164,32 +164,32 @@ export function MCTSTree({ root, width = 800, height = 600, onNodeClick, selecte
 			<svg ref={svgRef} width={width} height={height} className="w-full h-full" />
 			{tooltip && (
 				<div
-					className="absolute z-50 pointer-events-none bg-[oklch(0.16_0.005_285)] border border-white/10 rounded-lg px-4 py-3 shadow-2xl text-xs animate-scale-in max-w-xs"
-					style={{ left: tooltip.x + 16, top: tooltip.y }}
-				>
-					<div className="font-semibold text-foreground mb-2 leading-tight">
-						{STATUS_ICON[tooltip.node.status]} {tooltip.node.action || "(root)"}
+				className="absolute z-50 pointer-events-none bg-kumo-base border border-kumo-line rounded-lg px-4 py-3 shadow-2xl text-xs animate-scale-in max-w-xs"
+				style={{ left: tooltip.x + 16, top: tooltip.y }}
+			>
+				<div className="font-semibold text-kumo-default mb-2 leading-tight">
+					{STATUS_ICON[tooltip.node.status]} {tooltip.node.action || "(root)"}
+				</div>
+				<div className="grid grid-cols-2 gap-x-4 gap-y-1 text-kumo-subtle">
+					<span>Value</span>
+					<span className="text-kumo-default font-mono">{tooltip.node.value.toFixed(3)}</span>
+					<span>Visits</span>
+					<span className="text-kumo-default font-mono">{tooltip.node.visits}</span>
+					<span>Status</span>
+					<span className={
+						tooltip.node.status === "terminal" ? "text-green-400" :
+						tooltip.node.status === "pruned" ? "text-gray-500" :
+						tooltip.node.status === "failed" ? "text-red-400" :
+						"text-kumo-default"
+					}>{tooltip.node.status}</span>
+					<span>Depth</span>
+					<span className="text-kumo-default font-mono">{tooltip.node.depth}</span>
+				</div>
+				{tooltip.node.observation && (
+					<div className="mt-2 pt-2 border-t border-kumo-line text-kumo-subtle leading-relaxed">
+						{tooltip.node.observation.slice(0, 150)}{tooltip.node.observation.length > 150 ? "..." : ""}
 					</div>
-					<div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-						<span>Value</span>
-						<span className="text-foreground font-mono">{tooltip.node.value.toFixed(3)}</span>
-						<span>Visits</span>
-						<span className="text-foreground font-mono">{tooltip.node.visits}</span>
-						<span>Status</span>
-						<span className={
-							tooltip.node.status === "terminal" ? "text-emerald-400" :
-							tooltip.node.status === "pruned" ? "text-zinc-500" :
-							tooltip.node.status === "failed" ? "text-red-400" :
-							"text-foreground"
-						}>{tooltip.node.status}</span>
-						<span>Depth</span>
-						<span className="text-foreground font-mono">{tooltip.node.depth}</span>
-					</div>
-					{tooltip.node.observation && (
-						<div className="mt-2 pt-2 border-t border-white/10 text-muted-foreground leading-relaxed">
-							{tooltip.node.observation.slice(0, 150)}{tooltip.node.observation.length > 150 ? "…" : ""}
-						</div>
-					)}
+				)}
 				</div>
 			)}
 		</div>
