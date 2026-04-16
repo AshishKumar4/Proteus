@@ -16,7 +16,7 @@ export interface LLMProviderConfig {
   name: string;
   /** Base URL for the OpenAI-compatible API */
   baseURL: string;
-  /** Auth headers (e.g., { 'cf-aig-authorization': 'Bearer ...' }) */
+  /** Auth headers (e.g., { 'Authorization': 'Bearer ...' }) */
   headers: Record<string, string>;
   /** Model identifier (e.g., '@cf/moonshotai/kimi-k2.5') */
   model: string;

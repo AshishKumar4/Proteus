@@ -23,7 +23,7 @@ if (!dbPath) {
 const llmConfig = {
   name: 'workers-ai',
   baseURL: process.env.PROTEUS_BASE_URL ?? '',
-  headers: { 'cf-aig-authorization': process.env.PROTEUS_AUTH ?? '' },
+  headers: { 'Authorization': process.env.PROTEUS_AUTH ?? '' },
   model: process.env.PROTEUS_MODEL ?? '@cf/moonshotai/kimi-k2.5',
 };
 

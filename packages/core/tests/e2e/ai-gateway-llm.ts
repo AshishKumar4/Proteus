@@ -6,7 +6,7 @@
  *
  * Required env vars:
  *   AI_GATEWAY_BASE_URL  — Workers AI base URL
- *   AI_GATEWAY_AUTH      — cf-aig-authorization header value (Bearer ...)
+ *   AI_GATEWAY_AUTH      — Authorization header value (Bearer ...)
  *   AI_GATEWAY_MODEL     — Model ID (default: @cf/moonshotai/kimi-k2.5)
  */
 
@@ -41,7 +41,7 @@ export function loadAIGatewayProviders(): { primary: LLM; judge: LLM } {
   const config = {
     name: 'workers-ai',
     baseURL,
-    headers: { 'cf-aig-authorization': auth },
+    headers: { 'Authorization': auth },
     model,
   };
 

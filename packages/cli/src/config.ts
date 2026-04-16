@@ -90,7 +90,7 @@ export function resolveLLMConfig(opts?: {
   return {
     name: 'workers-ai',
     baseURL,
-    headers: { 'cf-aig-authorization': auth },
+    headers: { 'Authorization': auth },
     model,
   };
 }
