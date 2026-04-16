@@ -260,6 +260,46 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════════════
+# §7. Real E2E — Web (WebSocket + HTTP against running dev server)
+# ═══════════════════════════════════════════════════════════════════
+echo -e "${BOLD}§7. Web E2E (live agent tests)${NC}"
+
+WEB_E2E="$(dirname "$0")/e2e-web.sh"
+if [ -x "$WEB_E2E" ]; then
+  if bash "$WEB_E2E"; then
+    RESULTS+=("${GREEN}✅ PASS${NC}: Web E2E tests passed")
+    ((PASS++))
+  else
+    RESULTS+=("${RED}❌ FAIL${NC}: Web E2E tests failed")
+    ((FAIL++))
+  fi
+else
+  skip "Web E2E tests" "scripts/e2e-web.sh not found or not executable"
+fi
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# §8. Real E2E — CLI (local agent lifecycle)
+# ═══════════════════════════════════════════════════════════════════
+echo -e "${BOLD}§8. CLI E2E (local agent lifecycle)${NC}"
+
+CLI_E2E="$(dirname "$0")/e2e-cli.sh"
+if [ -x "$CLI_E2E" ]; then
+  if bash "$CLI_E2E"; then
+    RESULTS+=("${GREEN}✅ PASS${NC}: CLI E2E tests passed")
+    ((PASS++))
+  else
+    RESULTS+=("${RED}❌ FAIL${NC}: CLI E2E tests failed")
+    ((FAIL++))
+  fi
+else
+  skip "CLI E2E tests" "scripts/e2e-cli.sh not found or not executable"
+fi
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
 # Report
 # ═══════════════════════════════════════════════════════════════════
 echo ""
