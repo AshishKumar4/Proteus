@@ -13,7 +13,7 @@
  */
 
 import type { ExecutorProvider, ExecutorCapability } from './types.js';
-import type { VFS, Memory } from '../types/primitives.js';
+import type { VFS, Memory, SqlExecutor } from '../types/primitives.js';
 import type { CraftStore } from '../types/agent-runtime.js';
 
 interface ShellExec {
@@ -25,10 +25,12 @@ export interface InlineExecutorDeps {
   memory: Memory;
   craftStore: CraftStore;
   shell: ShellExec;
+  /** Optional — used to look up craft_scores for listTools(). Falls back to 0.7 if missing. */
+  sql?: SqlExecutor;
 }
 
 export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider {
-  const { vfs, memory, craftStore, shell } = deps;
+  const { vfs, memory, craftStore, shell, sql } = deps;
 
   const tools: ExecutorProvider['tools'] = {
     readFile: {
@@ -96,25 +98,71 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
     },
 
     listTools: {
-      description: 'List all available tools including dynamically crafted ones.',
+      description: 'List crafted tools as an array of { name, description, qualityScore }.',
       execute: async () => {
+        // Return a real array so LLM code like `const tools = await workspace.listTools(); tools.filter(...)` works.
+        // Previous implementation returned a joined markdown string and broke .filter/.map.
         const crafted = craftStore.list();
-        if (crafted.length === 0) return 'No crafted tools yet. Use workspace.createTool() to create one.';
-        return crafted.map(t => `- ${t.name}: ${t.description} (score: ${((t as any).qualityScore ?? 0.7).toFixed(2)})`).join('\n');
+        // Pull EMA scores if available; default to 0.7 when unscored.
+        const scoreByName = new Map<string, number>();
+        if (sql) {
+          try {
+            const rows = sql<{ tool_name: string; score: number }>`
+              SELECT tool_name, score FROM craft_scores
+            `;
+            for (const r of rows) scoreByName.set(r.tool_name, r.score);
+          } catch { /* craft_scores may not exist yet */ }
+        }
+        return crafted.map(t => ({
+          name: t.name,
+          description: t.description,
+          qualityScore: scoreByName.get(t.name) ?? 0.7,
+        }));
+      },
+    },
+
+    invokeCrafted: {
+      description: 'Invoke a crafted tool BY NAME with positional args. Use this to call a tool just created via workspace.createTool() in the SAME turn, since codemode.<name> is only wired up at the start of a turn (getTools() cache). Returns the tool\'s return value, or an error object { error } on failure.',
+      execute: async (name: unknown, ...args: unknown[]) => {
+        const toolName = String(name);
+        if (!toolName) return { error: 'invokeCrafted requires a name argument.' };
+        const tool = craftStore.get(toolName);
+        if (!tool) return { error: `Crafted tool "${toolName}" not found in CraftStore.` };
+        if (!tool.code || tool.code.startsWith('//')) {
+          return { error: `Crafted tool "${toolName}" has no executable code.` };
+        }
+        try {
+          // Compile the crafted code to a function and invoke with positional args.
+          // Same semantics as loadFilteredCraftedTools('inline-function').
+          const fn = new Function('return ' + tool.code)() as (...args: unknown[]) => Promise<unknown>;
+          if (typeof fn !== 'function') return { error: `Crafted tool "${toolName}" code did not evaluate to a function.` };
+          return await fn(...args);
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) };
+        }
       },
     },
 
     createTool: {
-      description: 'Create a reusable tool stored in CraftStore. The tool persists across conversations and appears in the Tools pane. Use this instead of writing files to /tools/.',
+      description: 'Create or update a reusable tool in CraftStore. To call the tool in the SAME turn, use workspace.invokeCrafted(name, ...args). The tool also becomes callable as codemode.<name>(args) in the NEXT turn (getTools() is cached per-turn). Returns { ok, name, action: "created"|"updated" }.',
       execute: async (name: unknown, description: unknown, code: unknown) => {
-        const toolName = String(name).replace(/[^a-z0-9_]/gi, '_').toLowerCase();
-        if (!toolName || !description || !code) return 'Error: createTool requires name, description, and code arguments.';
+        if (!name || !description || !code) {
+          return { ok: false, error: 'createTool requires name, description, and code arguments.' };
+        }
+        // Preserve original case — the LLM often wants camelCase identifiers.
+        // Only strip characters that aren't valid in a JS identifier, but do NOT lowercase.
+        // Also prepend '_' if the first char is a digit so it's a valid JS ident.
+        const raw = String(name);
+        let toolName = raw.replace(/[^A-Za-z0-9_]/g, '_');
+        if (!toolName) return { ok: false, error: 'Tool name must contain at least one identifier character.' };
+        if (/^[0-9]/.test(toolName)) toolName = '_' + toolName;
         try {
-          // Check if tool already exists
+          // Upsert: update if exists, else create. CraftStore has no upsert helper,
+          // and `name` is PRIMARY KEY so raw INSERT on existing row would throw.
           const existing = craftStore.get(toolName);
           if (existing) {
             craftStore.update(toolName, { description: String(description), code: String(code) });
-            return `Tool "${toolName}" updated in CraftStore.`;
+            return { ok: true, name: toolName, action: 'updated' };
           }
           craftStore.create({
             name: toolName,
@@ -123,9 +171,9 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
             scope: 'local',
             params: null,
           });
-          return `Tool "${toolName}" created in CraftStore. It will appear in the Tools pane and persist across conversations.`;
+          return { ok: true, name: toolName, action: 'created' };
         } catch (err) {
-          return `Error creating tool: ${err instanceof Error ? err.message : String(err)}`;
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
         }
       },
     },
@@ -139,9 +187,23 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
   function exec(command: string): Promise<string>;
   function searchMemory(query: string): Promise<string>;
   function saveNote(content: string): Promise<string>;
-  function listTools(): Promise<string>;
-  /** Create a reusable tool in CraftStore. Persists across conversations. Appears in Tools pane. */
-  function createTool(name: string, description: string, code: string): Promise<string>;
+  /** Returns Array<{name, description, qualityScore}> of crafted tools. */
+  function listTools(): Promise<Array<{ name: string; description: string; qualityScore: number }>>;
+  /**
+   * Create or update a crafted tool. To CALL the tool in the SAME turn, use
+   * workspace.invokeCrafted(name, ...args). It also becomes callable as
+   * \`codemode.<name>(args)\` in the NEXT turn (getTools() caches per-turn).
+   * Name is sanitized to a valid JS identifier; original case preserved.
+   */
+  function createTool(
+    name: string, description: string, code: string
+  ): Promise<{ ok: boolean; name?: string; action?: 'created' | 'updated'; error?: string }>;
+  /**
+   * Invoke a crafted tool by name with positional args. Use this when you
+   * just created a tool in the same turn and want to call it before codemode.<name>
+   * is wired up.
+   */
+  function invokeCrafted(name: string, ...args: unknown[]): Promise<unknown>;
 }`;
 
   return {

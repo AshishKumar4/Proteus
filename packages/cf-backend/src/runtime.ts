@@ -81,6 +81,9 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
   const executionRouter: ExecutionRouter = new DefaultExecutionRouter();
   executionRouter.register(createInlineExecutor({
     vfs, memory, craftStore, shell,
+    // sql is used by workspace.listTools() to look up EMA craft_scores.
+    // Cast because adaptVFS returns core's SqlExecutor shape.
+    sql: sql as unknown as import("@proteus/core").SqlExecutor,
   }));
   // Register Nimbus executor if the NimbusSession DO binding is available
   const env = agent.env as Env & Record<string, unknown>;
