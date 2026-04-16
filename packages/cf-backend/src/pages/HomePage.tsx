@@ -11,16 +11,16 @@ function AgentCard({ entry, onClick, onDelete }: {
   return (
     <div className="p-card rounded-xl p-4 cursor-pointer animate-fade-in relative group" onClick={onClick}>
       <div className="flex items-center justify-between mb-2">
-        <span className="font-medium text-sm text-kumo-default">{entry.name}</span>
-        <span className="flex items-center gap-1.5 text-[11px] text-kumo-inactive">
+        <span className="font-medium text-sm p-text">{entry.name}</span>
+        <span className="flex items-center gap-1.5 text-[11px] p-text-3">
           <ClockIcon size={11} />
           {new Date(entry.lastVisited).toLocaleDateString()}
         </span>
       </div>
-      <p className="text-xs text-kumo-subtle line-clamp-2 leading-relaxed">{entry.purpose || "No purpose set"}</p>
+      <p className="text-xs p-text-2 line-clamp-2 leading-relaxed">{entry.purpose || "No purpose set"}</p>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1 rounded text-kumo-inactive hover:text-red-400 transition-all"
+        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1 rounded p-text-3 hover:p-danger transition-all"
         title="Remove"
       >
         <TrashIcon size={12} />
@@ -52,20 +52,17 @@ export default function HomePage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="min-h-full flex flex-col">
-        {/* Hero — clean, subtle radial glow behind logo */}
-        <div className="flex flex-col items-center justify-center px-6 pt-24 pb-14 relative">
-          {/* Faint glow */}
-          <div className="absolute top-8 left-1/2 -translate-x-1/2 w-80 h-40 rounded-full opacity-[0.04]" style={{ background: "radial-gradient(circle, hsl(var(--p-accent)), transparent 70%)" }} />
-
-          <div className="flex flex-col items-center w-full max-w-2xl space-y-5 relative">
+        {/* Hero — clean, no gradient */}
+        <div className="flex flex-col items-center justify-center px-6 pt-24 pb-14">
+          <div className="flex flex-col items-center w-full max-w-2xl space-y-5">
             <BrainIcon size={44} weight="duotone" className="p-accent" />
             <div className="text-center space-y-1.5">
-              <h1 className="text-4xl font-bold tracking-tight text-kumo-default">Proteus</h1>
-              <p className="text-[13px] text-kumo-subtle">Self-evolving AI agents with MCTS-guided exploration</p>
+              <h1 className="text-4xl font-bold tracking-tight p-text">Proteus</h1>
+              <p className="text-[13px] p-text-2">Self-evolving AI agents with MCTS-guided exploration</p>
             </div>
 
             {/* Input */}
-            <div className="w-full max-w-xl p-card rounded-xl p-3 p-input-ring transition-all">
+            <div className="w-full max-w-xl p-card rounded-xl p-3 p-focus transition-all">
               <div className="flex items-end gap-3">
                 <InputArea
                   value={input}
@@ -79,7 +76,7 @@ export default function HomePage() {
                 {creating ? (
                   <Loader size="sm" className="mb-1" />
                 ) : (
-                  <button onClick={handleCreate} disabled={!input.trim()} className="p-send-btn rounded-lg p-2 mb-0.5 cursor-pointer" aria-label="Create agent">
+                  <button onClick={handleCreate} disabled={!input.trim()} className="p-btn rounded-lg p-2 mb-0.5 cursor-pointer" aria-label="Create agent">
                     <PaperPlaneRightIcon size={16} />
                   </button>
                 )}
@@ -97,7 +94,7 @@ export default function HomePage() {
           <div className="max-w-4xl mx-auto">
             {agents.length > 0 && (
               <>
-                <h2 className="text-[11px] font-medium text-kumo-inactive mb-3 uppercase tracking-wider">Recent Agents</h2>
+                <h2 className="text-[11px] font-medium p-text-3 mb-3 uppercase tracking-wider">Recent Agents</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {agents.map(entry => (
                     <AgentCard key={entry.id} entry={entry}
@@ -110,9 +107,9 @@ export default function HomePage() {
             )}
             {agents.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <PlusIcon size={28} className="text-kumo-inactive mb-3" />
-                <p className="text-sm text-kumo-subtle mb-1">No agents yet</p>
-                <p className="text-xs text-kumo-inactive">Describe a mission above to create your first agent</p>
+                <PlusIcon size={28} className="p-text-3 mb-3" />
+                <p className="text-sm p-text-2 mb-1">No agents yet</p>
+                <p className="text-xs p-text-3">Describe a mission above to create your first agent</p>
               </div>
             )}
           </div>

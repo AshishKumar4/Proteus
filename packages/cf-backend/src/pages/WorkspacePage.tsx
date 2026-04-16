@@ -40,14 +40,14 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
   const lang = className?.replace(/^language-/, "") ?? "";
   return (
     <div className="relative group my-2">
-      <div className="flex items-center justify-between px-3 py-1 rounded-t-lg bg-kumo-elevated border border-b-0 border-kumo-line text-[10px] text-kumo-inactive">
+      <div className="flex items-center justify-between px-3 py-1 rounded-t-lg p-elevated border border-b-0 p-border text-[10px] p-text-3">
         <span>{lang || "code"}</span>
         <button onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-          className="flex items-center gap-1 hover:text-kumo-default transition-colors">
+          className="flex items-center gap-1 hover:p-text transition-colors">
           <CopyIcon size={12} />{copied ? "Copied!" : "Copy"}
         </button>
       </div>
-      <div className="rounded-b-lg border border-t-0 border-kumo-line overflow-hidden">
+      <div className="rounded-b-lg border border-t-0 p-border overflow-hidden">
         <Code language={lang || "text"} theme="auto">{code}</Code>
       </div>
     </div>
@@ -58,13 +58,13 @@ function MarkdownContent({ content }: { content: string }) {
   return (
     <Markdown remarkPlugins={[remarkGfm]} components={{
       code({ className, children, ...props }) {
-        if (!className) return <code className="bg-kumo-elevated px-1.5 py-0.5 rounded text-xs font-mono" {...props}>{children}</code>;
+        if (!className) return <code className="p-elevated px-1.5 py-0.5 rounded text-xs font-mono" {...props}>{children}</code>;
         return <CodeBlock className={className}>{children}</CodeBlock>;
       },
       a({ href, children }) { return <a href={href} target="_blank" rel="noopener noreferrer" className="p-accent hover:underline">{children}</a>; },
       table({ children }) { return <div className="overflow-x-auto my-2"><table className="w-full text-xs border-collapse">{children}</table></div>; },
-      th({ children }) { return <th className="border border-kumo-line px-2 py-1 text-left font-medium bg-kumo-elevated">{children}</th>; },
-      td({ children }) { return <td className="border border-kumo-line px-2 py-1">{children}</td>; },
+      th({ children }) { return <th className="border p-border px-2 py-1 text-left font-medium p-elevated">{children}</th>; },
+      td({ children }) { return <td className="border p-border px-2 py-1">{children}</td>; },
       pre({ children }) { return <>{children}</>; },
     }}>{content}</Markdown>
   );
@@ -84,19 +84,19 @@ function MessageTimestamp({ createdAt }: { createdAt?: string | number | Date })
   if (!createdAt) return null;
   const d = createdAt instanceof Date ? createdAt : new Date(createdAt);
   if (isNaN(d.getTime())) return null;
-  return <span className="text-[10px] text-kumo-inactive mt-1 block">{formatTime(d)}</span>;
+  return <span className="text-[10px] p-text-3 mt-1 block">{formatTime(d)}</span>;
 }
 
 function ReasoningBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="p-card rounded-lg px-3 py-2 my-1.5" style={{ borderLeftWidth: 2, borderLeftColor: "hsl(280 50% 55% / 0.4)" }}>
+    <div className="p-card rounded-lg px-3 py-2 my-1.5" style={{ borderLeftWidth: 2, borderLeftColor: "var(--c-accent)" }}>
       <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-purple-400/80 w-full text-left">
         <GearIcon size={12} className="shrink-0" />
         <span className="font-medium">Thinking</span>
         {expanded ? <CaretDownIcon size={12} className="ml-auto" /> : <CaretRightIcon size={12} className="ml-auto" />}
       </button>
-      <div className={`mt-1 text-xs text-kumo-subtle whitespace-pre-wrap ${!expanded ? "line-clamp-2" : ""}`}>
+      <div className={`mt-1 text-xs p-text-2 whitespace-pre-wrap ${!expanded ? "line-clamp-2" : ""}`}>
         {expanded ? text : text.length > 100 ? text.slice(0, 100) + "..." : text}
       </div>
     </div>
@@ -123,17 +123,17 @@ function ToolCallBlock({ toolName, input, output, isRunning, isError }: {
 
   return (
     <div className="my-1.5">
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-kumo-subtle hover:text-kumo-default transition-colors">
+      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs p-text-2 hover:p-text transition-colors">
         {isRunning ? <Loader size="sm" /> : isError ? <WrenchIcon size={12} className="text-red-400" /> : <CheckCircleIcon size={12} className="text-green-400" />}
         <span className="font-mono">{toolName}</span>
         {isRunning && <span className="text-amber-400/80 text-[11px]">running...</span>}
-        {durationLabel && !isRunning && <span className="text-kumo-inactive text-[10px] flex items-center gap-0.5"><TimerIcon size={10} />{durationLabel}</span>}
+        {durationLabel && !isRunning && <span className="p-text-3 text-[10px] flex items-center gap-0.5"><TimerIcon size={10} />{durationLabel}</span>}
         {expanded ? <CaretDownIcon size={10} /> : <CaretRightIcon size={10} />}
       </button>
       {expanded && (
         <div className="mt-1.5 ml-5 space-y-1 animate-scale-in">
-          {input != null && <pre className="rounded-lg bg-kumo-elevated border border-kumo-line p-2.5 text-xs font-mono text-kumo-subtle max-h-40 overflow-auto">{JSON.stringify(input, null, 2)}</pre>}
-          {output != null && <pre className="rounded-lg bg-kumo-elevated border border-kumo-line p-2.5 text-xs font-mono text-kumo-subtle max-h-40 overflow-auto whitespace-pre-wrap">{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>}
+          {input != null && <pre className="rounded-lg p-elevated border p-border p-2.5 text-xs font-mono p-text-2 max-h-40 overflow-auto">{JSON.stringify(input, null, 2)}</pre>}
+          {output != null && <pre className="rounded-lg p-elevated border p-border p-2.5 text-xs font-mono p-text-2 max-h-40 overflow-auto whitespace-pre-wrap">{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>}
         </div>
       )}
     </div>
@@ -165,11 +165,11 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
     return (
       <div className="flex items-center gap-2 animate-fade-in py-2">
         <div className="flex gap-1">
-          <span className="size-1.5 rounded-full bg-kumo-subtle animate-bounce [animation-delay:0ms]" />
-          <span className="size-1.5 rounded-full bg-kumo-subtle animate-bounce [animation-delay:150ms]" />
-          <span className="size-1.5 rounded-full bg-kumo-subtle animate-bounce [animation-delay:300ms]" />
+          <span className="size-1.5 rounded-full bg-[var(--c-text-3)] animate-bounce [animation-delay:0ms]" />
+          <span className="size-1.5 rounded-full bg-[var(--c-text-3)] animate-bounce [animation-delay:150ms]" />
+          <span className="size-1.5 rounded-full bg-[var(--c-text-3)] animate-bounce [animation-delay:300ms]" />
         </div>
-        <span className="text-xs text-kumo-inactive">Thinking...</span>
+        <span className="text-xs p-text-3">Thinking...</span>
       </div>
     );
   }
@@ -186,9 +186,9 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
           if (!t) return null;
           const isLastText = message.parts.slice(i + 1).every(p => p.type !== "text");
           return (
-            <div key={i} className="prose-chat text-kumo-default">
+            <div key={i} className="prose-chat p-text">
               <MarkdownContent content={t} />
-              {isLive && isLastText && <span className="inline-block w-0.5 h-[1em] ml-0.5 align-text-bottom animate-blink-cursor" style={{ background: "hsl(var(--p-accent))" }} />}
+              {isLive && isLastText && <span className="inline-block w-0.5 h-[1em] ml-0.5 align-text-bottom animate-blink-cursor" style={{ background: "var(--c-accent)" }} />}
             </div>
           );
         }
@@ -219,15 +219,15 @@ function EvolutionItem({ event }: { event: EvolutionEventRow }) {
   return (
     <div className="flex gap-3 animate-fade-in">
       <div className="flex flex-col items-center">
-        <div className={`size-2 rounded-full mt-1.5 ${EVO_COLORS[event.type] ?? "bg-kumo-inactive"}`} />
-        <div className="flex-1 w-px bg-kumo-line" />
+        <div className={`size-2 rounded-full mt-1.5 ${EVO_COLORS[event.type] ?? "bg-[var(--c-text-3)]"}`} />
+        <div className="flex-1 w-px" style={{ background: "var(--c-border)" }} />
       </div>
       <div className="pb-4">
-        <div className="flex items-center gap-2 text-xs text-kumo-subtle mb-0.5">
+        <div className="flex items-center gap-2 text-xs p-text-2 mb-0.5">
           <span className="font-mono text-[11px]">{new Date(event.created_at).toLocaleTimeString()}</span>
           <Badge variant="secondary">{event.type}</Badge>
         </div>
-        <span className="text-sm text-kumo-default block">{event.message}</span>
+        <span className="text-sm p-text block">{event.message}</span>
       </div>
     </div>
   );
@@ -250,8 +250,8 @@ function EvolutionTab({ events, onRefresh }: { events: EvolutionEventRow[]; onRe
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <ClockIcon size={14} className="text-kumo-subtle" />
-          <span className="text-sm font-medium text-kumo-default">Evolution Timeline</span>
+          <ClockIcon size={14} className="p-text-2" />
+          <span className="text-sm font-medium p-text">Evolution Timeline</span>
           {events.length > 0 && <Badge variant="secondary">{events.length}</Badge>}
         </div>
         <Button variant="secondary" size="sm" onClick={onRefresh}>Refresh</Button>
@@ -260,7 +260,7 @@ function EvolutionTab({ events, onRefresh }: { events: EvolutionEventRow[]; onRe
         <div className="flex items-center gap-1 mb-3">
           {(["all", "turn", "session", "lifetime"] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
-              className={`px-2 py-1 text-[11px] rounded-md transition-colors ${filter === f ? "bg-kumo-elevated text-kumo-default font-medium" : "text-kumo-inactive hover:text-kumo-subtle"}`}>
+              className={`px-2 py-1 text-[11px] rounded-md transition-colors ${filter === f ? "p-elevated p-text font-medium" : "p-text-3 hover:p-text-2"}`}>
               {f === "all" ? "All" : TIMESCALE_LABEL[f]}
             </button>
           ))}
@@ -273,12 +273,12 @@ function EvolutionTab({ events, onRefresh }: { events: EvolutionEventRow[]; onRe
         return (
           <div key={e.id} className={`flex gap-3 animate-fade-in border-l-2 ${TIMESCALE_BORDER[scale]} pl-3 mb-3`}>
             <div className="pb-1">
-              <div className="flex items-center gap-2 text-xs text-kumo-subtle mb-0.5">
+              <div className="flex items-center gap-2 text-xs p-text-2 mb-0.5">
                 <span className="font-mono text-[11px]">{new Date(e.created_at).toLocaleTimeString()}</span>
                 <Badge variant="secondary">{e.type}</Badge>
-                <span className="text-[10px] text-kumo-inactive">{TIMESCALE_LABEL[scale]}</span>
+                <span className="text-[10px] p-text-3">{TIMESCALE_LABEL[scale]}</span>
               </div>
-              <span className="text-sm text-kumo-default block">{e.message}</span>
+              <span className="text-sm p-text block">{e.message}</span>
             </div>
           </div>
         );
@@ -290,9 +290,9 @@ function EvolutionTab({ events, onRefresh }: { events: EvolutionEventRow[]; onRe
 function EmptyTab({ icon, title, hint }: { icon: React.ReactNode; title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="text-kumo-inactive mb-3">{icon}</div>
-      <p className="text-sm text-kumo-subtle">{title}</p>
-      {hint && <p className="text-xs text-kumo-inactive mt-1">{hint}</p>}
+      <div className="p-text-3 mb-3">{icon}</div>
+      <p className="text-sm p-text-2">{title}</p>
+      {hint && <p className="text-xs p-text-3 mt-1">{hint}</p>}
     </div>
   );
 }
@@ -314,21 +314,21 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
   function maxD(n: MCTSNode): number { return n.children.length === 0 ? n.depth : Math.max(...n.children.map(maxD)); }
   return (
     <div ref={containerRef} className="animate-fade-in h-full flex flex-col">
-      <div className="flex items-center gap-4 mb-2 text-xs text-kumo-subtle">
-        <span>Nodes: <span className="text-kumo-default font-mono">{countN(mctsTree)}</span></span>
-        <span>Depth: <span className="text-kumo-default font-mono">{maxD(mctsTree)}</span></span>
-        <span>Root: <span className="text-kumo-default font-mono">{mctsTree.value.toFixed(3)}</span></span>
+      <div className="flex items-center gap-4 mb-2 text-xs p-text-2">
+        <span>Nodes: <span className="p-text font-mono">{countN(mctsTree)}</span></span>
+        <span>Depth: <span className="p-text font-mono">{maxD(mctsTree)}</span></span>
+        <span>Root: <span className="p-text font-mono">{mctsTree.value.toFixed(3)}</span></span>
       </div>
       <div className="flex-1 min-h-0">{dims.w > 0 && <MCTSTree root={mctsTree} width={dims.w} height={dims.h} onNodeClick={setSelectedNode} selectedNode={selectedNode} />}</div>
       {selectedNode && (
         <div className="p-card rounded-lg p-3 mt-2 animate-fade-in">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-kumo-default">Node Details</span>
+            <span className="text-xs font-medium p-text">Node Details</span>
             <Button variant="ghost" size="sm" onClick={() => setSelectedNode(null)}>Close</Button>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
             {([["Action", selectedNode.action || "(root)"], ["Value", selectedNode.value.toFixed(4)], ["Visits", selectedNode.visits], ["Status", selectedNode.status], ["Depth", selectedNode.depth], ["Children", selectedNode.children.length]] as const).map(([k, v]) => (
-              <div key={k} className="contents"><span className="text-kumo-subtle">{k}</span><span className="text-kumo-default font-mono">{String(v)}</span></div>
+              <div key={k} className="contents"><span className="p-text-2">{k}</span><span className="p-text font-mono">{String(v)}</span></div>
             ))}
           </div>
         </div>
@@ -340,7 +340,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
 function ModelSelector({ current, onChange }: { current: string; onChange: (id: string) => void }) {
   return (
     <select value={current} onChange={e => onChange(e.target.value)}
-      className="text-[11px] bg-kumo-elevated border border-kumo-line rounded-md px-1.5 py-1 text-kumo-default focus:outline-none">
+      className="text-[11px] p-elevated border p-border rounded-md px-1.5 py-1 p-text focus:outline-none">
       {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
     </select>
   );
@@ -354,8 +354,8 @@ function LogsTab({ logs, connectionStatus }: { logs: LogEntry[]; connectionStatu
     <div className="animate-fade-in space-y-1">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <TerminalIcon size={14} className="text-kumo-subtle" />
-          <span className="text-sm font-medium text-kumo-default">Activity Log</span>
+          <TerminalIcon size={14} className="p-text-2" />
+          <span className="text-sm font-medium p-text">Activity Log</span>
           <Badge variant="secondary">{logs.length}</Badge>
         </div>
         <ConnectionIndicator status={connectionStatus as "connected" | "connecting" | "disconnected" | "error"} />
@@ -363,13 +363,13 @@ function LogsTab({ logs, connectionStatus }: { logs: LogEntry[]; connectionStatu
       {logs.length === 0 ? <EmptyTab icon={<TerminalIcon size={28} />} title="No activity yet" /> : (
         <div className="space-y-1 max-h-[calc(100vh-200px)] overflow-y-auto">
           {logs.map(log => (
-            <div key={log.id} className="rounded border border-kumo-line bg-kumo-elevated px-2.5 py-1.5 text-xs font-mono">
+            <div key={log.id} className="rounded border p-border p-elevated px-2.5 py-1.5 text-xs font-mono">
               <div className="flex items-center gap-2">
                 <span className={`size-1.5 rounded-full shrink-0 ${C[log.type] ?? "bg-gray-500"}`} />
-                <span className="text-kumo-inactive">{new Date(log.time).toLocaleTimeString()}</span>
-                <span className="text-kumo-subtle">{log.message}</span>
+                <span className="p-text-3">{new Date(log.time).toLocaleTimeString()}</span>
+                <span className="p-text-2">{log.message}</span>
               </div>
-              {log.detail && <p className="mt-0.5 ml-4 text-kumo-inactive">{log.detail}</p>}
+              {log.detail && <p className="mt-0.5 ml-4 p-text-3">{log.detail}</p>}
             </div>
           ))}
           <div ref={endRef} />
@@ -414,26 +414,26 @@ export default function WorkspacePage() {
     </div>
   );
   if (state.connectionStatus === "connecting" && !state.agentStatus) return (
-    <div className="h-full flex items-center justify-center"><div className="flex items-center gap-2 text-sm text-kumo-subtle"><Loader size="sm" /><span>Connecting...</span></div></div>
+    <div className="h-full flex items-center justify-center"><div className="flex items-center gap-2 text-sm p-text-2"><Loader size="sm" /><span>Connecting...</span></div></div>
   );
 
   const as = state.agentStatus;
   return (
     <div className="h-full flex flex-col">
       {state.connectionStatus === "disconnected" && (
-        <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs text-amber-300 border-b p-divider" style={{ background: "hsl(40 60% 50% / 0.06)" }}>
+        <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs text-amber-300 border-b p-border" style={{ background: "var(--c-accent-subtle)" }}>
           <ArrowsClockwiseIcon size={12} className="animate-spin" />Reconnecting...
         </div>
       )}
       <PanelGroup className="flex-1">
         {/* ── Chat Panel ──────────────────────────────────────── */}
         <Panel minSize={30} defaultSize={42}>
-          <div className="flex flex-col h-full border-r p-divider">
+          <div className="flex flex-col h-full border-r p-border">
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b p-divider">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b p-border">
               <div className="flex items-center gap-3">
                 <ConnectionIndicator status={state.connectionStatus} />
-                <span className="font-medium text-sm text-kumo-default truncate max-w-[180px]">{as?.displayName || agentId}</span>
+                <span className="font-medium text-sm p-text truncate max-w-[180px]">{as?.displayName || agentId}</span>
                 {state.isStreaming && <Badge variant="primary">streaming</Badge>}
               </div>
               <div className="flex items-center gap-2">
@@ -441,7 +441,7 @@ export default function WorkspacePage() {
                 {state.messages.length > 0 && (
                   <Button variant="ghost" shape="square" size="sm" onClick={state.clearHistory} icon={<TrashIcon size={12} />} aria-label="Clear" />
                 )}
-                <Link to={`/settings/${agentId}`} className="text-kumo-subtle hover:text-kumo-default transition-colors" title="Settings">
+                <Link to={`/settings/${agentId}`} className="p-text-2 hover:p-text transition-colors" title="Settings">
                   <GearSixIcon size={14} />
                 </Link>
                 <Link to={`/mcts/${agentId}`} className="flex items-center gap-1 text-[11px] p-accent hover:opacity-80 transition-opacity">
@@ -454,8 +454,8 @@ export default function WorkspacePage() {
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 lg:px-8">
               {state.messages.length === 0 && !state.isStreaming && (
                 <div className="flex flex-col items-center justify-center h-full">
-                  <BrainIcon size={36} className="text-kumo-inactive mb-3" />
-                  <p className="text-sm text-kumo-inactive">Send a message to start</p>
+                  <BrainIcon size={36} className="p-text-3 mb-3" />
+                  <p className="text-sm p-text-3">Send a message to start</p>
                 </div>
               )}
               {state.messages.map((msg, i) => <MessageView key={msg.id} message={msg} isLast={i === state.messages.length - 1} isStreaming={state.isStreaming} />)}
@@ -463,32 +463,32 @@ export default function WorkspacePage() {
             </div>
 
             {/* Input */}
-            <div className="px-5 py-3 border-t p-divider lg:px-7">
+            <div className="px-5 py-3 border-t p-border lg:px-7">
               {state.error && <div className="mb-2 text-xs text-red-400 p-card rounded-lg px-3 py-1.5">{state.error}</div>}
-              <div className="flex items-end gap-3 p-card rounded-xl p-3 p-input-ring transition-all">
+              <div className="flex items-end gap-3 p-card rounded-xl p-3 p-focus transition-all">
                 <InputArea value={chatInput} onValueChange={setChatInput}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   placeholder="Send a message..." disabled={state.connectionStatus !== "connected"} rows={1}
                   className="flex-1 !ring-0 focus:!ring-0 !shadow-none !bg-transparent !outline-none" />
                 {state.isStreaming
                   ? <Button variant="secondary" shape="square" onClick={state.abortChat} icon={<StopIcon size={16} weight="fill" />} aria-label="Stop" className="mb-0.5" />
-                  : <button onClick={handleSend} disabled={!chatInput.trim() || state.connectionStatus !== "connected"} className="p-send-btn rounded-lg p-2 mb-0.5 cursor-pointer" aria-label="Send"><PaperPlaneRightIcon size={16} /></button>}
+                  : <button onClick={handleSend} disabled={!chatInput.trim() || state.connectionStatus !== "connected"} className="p-btn rounded-lg p-2 mb-0.5 cursor-pointer" aria-label="Send"><PaperPlaneRightIcon size={16} /></button>}
               </div>
             </div>
           </div>
         </Panel>
 
-        <PanelResizeHandle className="w-[3px] bg-kumo-line/20 hover:bg-kumo-accent/30 transition-colors cursor-col-resize" />
+        <PanelResizeHandle className="w-[3px] bg-[var(--c-border)] hover:bg-[var(--c-accent-subtle)] transition-colors cursor-col-resize" />
 
         {/* ── Right Panel ─────────────────────────────────────── */}
         <Panel minSize={25} defaultSize={58}>
           <div className="flex flex-col h-full">
             {/* Tabs — thin accent underline */}
-            <div className="flex items-center border-b p-divider px-2 gap-0.5">
+            <div className="flex items-center border-b p-border px-2 gap-0.5">
               {TABS.map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`px-3 py-2.5 text-xs font-medium transition-colors border-b -mb-px ${
-                    activeTab === tab ? "p-tab-active border-b-[1.5px]" : "text-kumo-subtle border-transparent hover:text-kumo-default"
+                    activeTab === tab ? "p-tab-active border-b-[1.5px]" : "p-text-2 border-transparent hover:p-text"
                   }`}>
                   {tab}
                 </button>
@@ -500,12 +500,12 @@ export default function WorkspacePage() {
               {activeTab === "Identity" && (as ? (
                 <div className="space-y-4 animate-fade-in">
                   <div className="flex items-center gap-3 mb-5">
-                    <div className="size-11 rounded-xl flex items-center justify-center bg-kumo-elevated border border-kumo-line">
+                    <div className="size-11 rounded-xl flex items-center justify-center p-elevated border p-border">
                       <FingerprintIcon size={22} className="p-accent" />
                     </div>
                     <div>
-                      <div className="font-medium text-kumo-default">{as.name}</div>
-                      <div className="text-[11px] text-kumo-inactive font-mono">{as.id.slice(0, 20)}...</div>
+                      <div className="font-medium p-text">{as.name}</div>
+                      <div className="text-[11px] p-text-3 font-mono">{as.id.slice(0, 20)}...</div>
                     </div>
                   </div>
                   <div className="space-y-0">
@@ -518,9 +518,9 @@ export default function WorkspacePage() {
                       ["Messages", String(as.messageCount)],
                       ["Created", new Date(as.createdAt).toLocaleString()],
                     ]).map(([l, v]) => (
-                      <div key={l} className="flex items-center justify-between py-2.5 border-b border-kumo-line last:border-0">
-                        <span className="text-sm text-kumo-subtle">{l}</span>
-                        <span className="text-sm text-kumo-default max-w-[60%] text-right">{v}</span>
+                      <div key={l} className="flex items-center justify-between py-2.5 border-b p-border last:border-0">
+                        <span className="text-sm p-text-2">{l}</span>
+                        <span className="text-sm p-text max-w-[60%] text-right">{v}</span>
                       </div>
                     ))}
                   </div>
@@ -538,15 +538,15 @@ export default function WorkspacePage() {
                       <div key={tool.name} className="p-card rounded-lg p-3">
                         <div className="flex items-center gap-2 mb-1">
                           <PackageIcon size={13} className="p-accent" />
-                          <span className="text-sm font-medium font-mono text-kumo-default">{tool.name}</span>
+                          <span className="text-sm font-medium font-mono p-text">{tool.name}</span>
                           <Badge variant={isLearned ? "primary" : "secondary"}>
                             {isLearned ? "Learned" : "Built-in"}
                           </Badge>
                           {tool.usageCount > 0 && (
-                            <span className="text-[10px] text-kumo-inactive ml-auto">{tool.usageCount} uses</span>
+                            <span className="text-[10px] p-text-3 ml-auto">{tool.usageCount} uses</span>
                           )}
                         </div>
-                        <span className="text-xs text-kumo-subtle block leading-relaxed mb-1.5">{tool.description}</span>
+                        <span className="text-xs p-text-2 block leading-relaxed mb-1.5">{tool.description}</span>
                         {isLearned && <ScoreBar value={tool.qualityScore} className="mt-1" />}
                       </div>
                     );
@@ -558,18 +558,18 @@ export default function WorkspacePage() {
               {activeTab === "Memory" && (
                 <div className="space-y-3 animate-fade-in">
                   <div className="relative">
-                    <MagnifyingGlassIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-kumo-inactive" />
+                    <MagnifyingGlassIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 p-text-3" />
                     <input value={memorySearch} onChange={e => { setMemorySearch(e.target.value); state.searchMemory(e.target.value); }}
-                      placeholder="Search memory..." className="w-full rounded-lg border border-kumo-line bg-kumo-elevated pl-9 pr-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-1 focus:ring-kumo-ring placeholder:text-kumo-inactive transition-all" />
+                      placeholder="Search memory..." className="w-full rounded-lg border p-border p-elevated pl-9 pr-3 py-2 text-sm p-text focus:outline-none focus:ring-1 focus:ring-[var(--c-accent)] placeholder:p-text-3 transition-all" />
                   </div>
                   {!memorySearch && state.memoryContent ? (
                     <div className="p-card rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-3">
                         <DatabaseIcon size={13} className="p-accent" />
                         <span className="text-xs font-mono p-accent">memory/MEMORY.md</span>
-                        <span className="text-[10px] text-kumo-inactive ml-auto">{state.memoryContent.length} chars</span>
+                        <span className="text-[10px] p-text-3 ml-auto">{state.memoryContent.length} chars</span>
                       </div>
-                      <div className="prose-chat text-kumo-default max-h-[500px] overflow-y-auto">
+                      <div className="prose-chat p-text max-h-[500px] overflow-y-auto">
                         <MarkdownContent content={state.memoryContent} />
                       </div>
                     </div>
@@ -580,7 +580,7 @@ export default function WorkspacePage() {
                   ) : state.memory.map((entry, i) => (
                     <div key={i} className="p-card rounded-lg p-3">
                       <span className="text-[11px] font-mono p-accent">{entry.updatedAt}</span>
-                      <p className="text-xs text-kumo-subtle line-clamp-4 whitespace-pre-wrap mt-1 leading-relaxed">{entry.content}</p>
+                      <p className="text-xs p-text-2 line-clamp-4 whitespace-pre-wrap mt-1 leading-relaxed">{entry.content}</p>
                     </div>
                   ))}
                 </div>
