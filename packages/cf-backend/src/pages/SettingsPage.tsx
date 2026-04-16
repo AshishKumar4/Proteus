@@ -16,7 +16,7 @@ function Card({ title, icon: Icon, children, variant }: {
     <div className={`p-card rounded-xl p-5 animate-fade-in ${variant === "danger" ? "!border-red-500/20" : ""}`}>
       <div className="flex items-center gap-2 mb-4">
         <Icon size={16} className={variant === "danger" ? "text-red-400" : "p-accent"} />
-        <span className="text-sm font-semibold text-kumo-default">{title}</span>
+        <span className="text-sm font-semibold p-text">{title}</span>
       </div>
       {children}
     </div>
@@ -26,13 +26,16 @@ function Card({ title, icon: Icon, children, variant }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs text-kumo-subtle block font-medium">{label}</label>
+      <label className="text-xs p-text-2 block font-medium">{label}</label>
       {children}
     </div>
   );
 }
 
-const inputCls = "w-full rounded-lg border border-kumo-line bg-kumo-elevated px-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-1 focus:ring-kumo-ring placeholder:text-kumo-inactive transition-all";
+const inputCls = "w-full rounded-lg px-3 py-2 text-sm p-text focus:outline-none transition-all" +
+  " border border-[var(--c-input-border)] bg-[var(--c-surface)]" +
+  " focus:border-[var(--c-accent)] focus:ring-1 focus:ring-[var(--c-accent-subtle)]" +
+  " placeholder:p-text-3";
 
 export default function SettingsPage() {
   const { agentId } = useParams();
@@ -86,8 +89,8 @@ export default function SettingsPage() {
             <Button variant="ghost" size="sm" icon={<ArrowLeftIcon size={14} />}>Back</Button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-kumo-default">Settings</h1>
-            <p className="text-xs text-kumo-inactive font-mono">{agentId}</p>
+            <h1 className="text-xl font-bold tracking-tight p-text">Settings</h1>
+            <p className="text-xs p-text-3 font-mono">{agentId}</p>
           </div>
         </div>
 
@@ -121,9 +124,9 @@ export default function SettingsPage() {
           <div className="space-y-0 text-sm">
             {state.agentStatus ? (
               [["Name", state.agentStatus.name], ["Scaffold", `v${state.agentStatus.scaffoldVersion}`], ["MCTS Nodes", state.agentStatus.searchNodeCount], ["Crafted Tools", state.agentStatus.craftedToolCount], ["Messages", state.agentStatus.messageCount]].map(([l, v]) => (
-                <div key={String(l)} className="flex justify-between py-2 border-b border-kumo-line last:border-0">
-                  <span className="text-kumo-subtle">{String(l)}</span>
-                  <span className="text-kumo-default font-medium">{String(v)}</span>
+                <div key={String(l)} className="flex justify-between py-2 border-b p-border last:border-0">
+                  <span className="p-text-2">{String(l)}</span>
+                  <span className="p-text font-medium">{String(v)}</span>
                 </div>
               ))
             ) : <div className="flex justify-center py-4"><Loader size="sm" /></div>}
@@ -132,7 +135,7 @@ export default function SettingsPage() {
 
         {/* Save */}
         <button onClick={handleSave} disabled={saving || state.connectionStatus !== "connected"}
-          className="p-send-btn rounded-lg px-5 py-2.5 text-sm font-medium flex items-center gap-2 cursor-pointer">
+          className="p-btn rounded-lg px-5 py-2.5 text-sm font-medium flex items-center gap-2 cursor-pointer">
           {saving ? <Loader size="sm" /> : saved ? <CheckIcon size={16} /> : <FloppyDiskIcon size={16} />}
           {saving ? "Saving..." : saved ? "Saved" : "Save All Changes"}
         </button>
@@ -142,8 +145,8 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-kumo-default block">Clear Memory</span>
-                <span className="text-xs text-kumo-inactive">Delete all memory files and FTS index</span>
+                <span className="text-sm p-text block">Clear Memory</span>
+                <span className="text-xs p-text-3">Delete all memory files and FTS index</span>
               </div>
               {confirmAction === "clearMemory" ? (
                 <div className="flex items-center gap-2">
@@ -154,11 +157,11 @@ export default function SettingsPage() {
                 <Button variant="secondary" size="sm" onClick={() => setConfirmAction("clearMemory")} icon={<EraserIcon size={12} />}>Clear</Button>
               )}
             </div>
-            <div className="border-t border-kumo-line" />
+            <div className="border-t p-border" />
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-kumo-default block">Reset MCTS Tree</span>
-                <span className="text-xs text-kumo-inactive">Delete all exploration nodes</span>
+                <span className="text-sm p-text block">Reset MCTS Tree</span>
+                <span className="text-xs p-text-3">Delete all exploration nodes</span>
               </div>
               {confirmAction === "resetMcts" ? (
                 <div className="flex items-center gap-2">

@@ -34,14 +34,14 @@ export default function MCTSExplorer() {
   const winner = tree ? findWinner(tree) : null;
 
   return (
-    <div className="h-full flex flex-col bg-kumo-elevated">
-      <div className="flex items-center justify-between px-5 py-3.5 border-b p-divider">
+    <div className="h-full flex flex-col p-bg">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b p-border">
         <div className="flex items-center gap-3">
           <Link to={`/agent/${agentId}`}><Button variant="ghost" size="sm" icon={<ArrowLeftIcon size={14} />}>Back</Button></Link>
-          <div className="h-4 w-px bg-kumo-line" />
+          <div className="h-4 w-px bg-[var(--c-border)]" />
           <TreeStructureIcon size={16} className="p-accent" />
-          <span className="font-semibold text-sm text-kumo-default">MCTS Explorer</span>
-          {state.agentStatus && <span className="text-xs text-kumo-subtle">- {state.agentStatus.name}</span>}
+          <span className="font-semibold text-sm p-text">MCTS Explorer</span>
+          {state.agentStatus && <span className="text-xs p-text-2">- {state.agentStatus.name}</span>}
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" shape="square" size="sm" icon={<MagnifyingGlassMinusIcon size={16} />} aria-label="Zoom out" />
@@ -49,26 +49,26 @@ export default function MCTSExplorer() {
           <Button variant="ghost" shape="square" size="sm" icon={<ArrowsOutIcon size={16} />} aria-label="Fit" />
         </div>
       </div>
-      <div className="flex items-center gap-4 px-5 py-2 border-b p-divider text-xs text-kumo-subtle">
-        <span className="font-medium text-kumo-default">Legend:</span>
+      <div className="flex items-center gap-4 px-5 py-2 border-b p-border text-xs p-text-2">
+        <span className="font-medium p-text">Legend:</span>
         <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-green-500" />High</span>
         <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-amber-400" />Medium</span>
         <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-red-400" />Low</span>
         <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-gray-500 opacity-40" />Pruned</span>
-        <span className="ml-auto text-kumo-inactive">Node size = visit count</span>
+        <span className="ml-auto p-text-3">Node size = visit count</span>
       </div>
       <div ref={containerRef} className="flex-1 relative overflow-hidden">
         {!tree ? (
-          <div className="flex items-center justify-center h-full"><div className="flex items-center gap-2 text-sm text-kumo-subtle"><Loader size="sm" />Loading tree...</div></div>
+          <div className="flex items-center justify-center h-full"><div className="flex items-center gap-2 text-sm p-text-2"><Loader size="sm" />Loading tree...</div></div>
         ) : dims.w > 0 && <MCTSTree root={tree} width={dims.w} height={dims.h} onNodeClick={setSelected} />}
       </div>
-      <div className="flex items-center justify-between px-5 py-2.5 border-t p-divider">
+      <div className="flex items-center justify-between px-5 py-2.5 border-t p-border">
         <div className="flex items-center gap-6 text-xs">
-          <span className="text-kumo-subtle">Nodes: <span className="text-kumo-default font-medium">{total}</span></span>
-          <span className="text-kumo-subtle">Depth: <span className="text-kumo-default font-medium">{depth}</span></span>
+          <span className="p-text-2">Nodes: <span className="p-text font-medium">{total}</span></span>
+          <span className="p-text-2">Depth: <span className="p-text font-medium">{depth}</span></span>
           {winner && (
             <>
-              <span className="text-kumo-subtle">Winner: <span className="text-green-400 font-medium">{winner.value.toFixed(3)}</span></span>
+              <span className="p-text-2">Winner: <span className="text-green-400 font-medium">{winner.value.toFixed(3)}</span></span>
               <span className={`flex items-center gap-1 ${winner.status === "terminal" ? "text-green-400" : "text-amber-400"}`}>
                 <span className="size-1.5 rounded-full bg-current animate-pulse" />
                 {winner.status === "terminal" ? "Converged" : "Searching..."}
@@ -78,9 +78,9 @@ export default function MCTSExplorer() {
         </div>
         {selected && (
           <div className="flex items-center gap-4 text-xs animate-fade-in">
-            <span className="text-kumo-subtle">Selected:</span>
-            <span className="font-mono text-kumo-default">{selected.action}</span>
-            <span className="text-kumo-subtle">v={selected.value.toFixed(3)} n={selected.visits}</span>
+            <span className="p-text-2">Selected:</span>
+            <span className="font-mono p-text">{selected.action}</span>
+            <span className="p-text-2">v={selected.value.toFixed(3)} n={selected.visits}</span>
           </div>
         )}
       </div>
