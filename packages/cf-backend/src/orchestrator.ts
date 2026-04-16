@@ -23,7 +23,7 @@ import type { LanguageModel, ToolSet } from "ai";
 // tool + jsonSchema still used by explore tool
 import type {
   TurnContext, TurnConfig, ChatResponseResult,
-  ToolCallResultContext, StepContext,
+  ToolCallResultContext, StepContext, ChunkContext,
 } from "@cloudflare/think";
 import {
   EvolutionEngine,
@@ -60,6 +60,26 @@ export class OrchestratorAgent extends Think<Env> {
   // ── Tool cache: avoid rebuilding 5-tool ToolSet + codemode types every turn ──
   private _cachedTools: ToolSet | null = null;
   private _cachedToolsKey: string = "";
+
+  // ── Turn-level latency tracing ──
+  // Records ms timestamps for each pre-inference step and broadcasts to UI.
+  private _turnTraceT0 = 0;
+  private _firstChunkReceived = false;
+
+  private _trace(event: string, detail?: string) {
+    const elapsed = this._turnTraceT0 > 0 ? performance.now() - this._turnTraceT0 : 0;
+    const msg = `[${elapsed.toFixed(0).padStart(6)}ms] ${event}${detail ? ` — ${detail}` : ""}`;
+    console.log(`[proteus:trace] ${msg}`);
+    try {
+      this.broadcast(JSON.stringify({
+        type: "turn-trace",
+        elapsed: Math.round(elapsed),
+        event,
+        detail: detail ?? null,
+        timestamp: Date.now(),
+      }));
+    } catch { /* no connections — fine */ }
+  }
 
   private get rt(): AgentRuntime {
     if (!this._rt) this._rt = createCFRuntime(this);
@@ -111,14 +131,14 @@ export class OrchestratorAgent extends Think<Env> {
   // ── Think lifecycle overrides ──────────────────────────────────
 
   getModel(): LanguageModel {
-    const t0 = performance.now();
+    this._trace("getModel start");
     const model = this.createModel(this.getStoredModelId());
-    console.log(`[proteus] getModel: ${(performance.now() - t0).toFixed(1)}ms`);
+    this._trace("getModel done");
     return model;
   }
 
   getSystemPrompt(): string {
-    const t0 = performance.now();
+    this._trace("getSystemPrompt start");
     try {
       const rows = this.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`;
       const purpose = rows[0]?.purpose ?? "You are a helpful coding assistant.";
@@ -163,10 +183,10 @@ Full-text search over long-term memory. Quick recall — no code needed.
 ## Evolution
 Your capabilities improve automatically via CraftStore — good patterns become tools.* APIs inside execute_tools.
 Summarize what you did after using tools.`;
-      console.log(`[proteus] getSystemPrompt: ${(performance.now() - t0).toFixed(1)}ms`);
+      this._trace("getSystemPrompt done", `${prompt.length} chars`);
       return prompt;
     } catch {
-      console.log(`[proteus] getSystemPrompt (fallback): ${(performance.now() - t0).toFixed(1)}ms`);
+      this._trace("getSystemPrompt fallback");
       return "You are a helpful coding assistant.";
     }
   }
@@ -186,38 +206,39 @@ Summarize what you did after using tools.`;
   }
 
   getTools(): ToolSet {
-    const t0 = performance.now();
+    // getTools() is the first subclass hook called by _runInferenceLoop.
+    // Start the per-turn trace timer here to capture the full pre-inference path.
+    this._turnTraceT0 = performance.now();
+    this._trace("getTools start");
 
     // Fast path: return cached tools if CraftStore hasn't changed
     const cacheKey = this._craftCacheKey();
     if (this._cachedTools && cacheKey === this._cachedToolsKey) {
-      console.log(`[proteus] getTools() cache HIT (${(performance.now() - t0).toFixed(1)}ms)`);
+      this._trace("getTools cache HIT");
       return this._cachedTools;
     }
-    console.log(`[proteus] getTools() cache MISS — rebuilding (key: ${this._cachedToolsKey} → ${cacheKey})`);
+    this._trace("getTools cache MISS — rebuilding", `key: ${this._cachedToolsKey} → ${cacheKey}`);
 
     try {
     const orchestrator = this;
     const env = this.env as Env & Record<string, unknown>;
     const tools: ToolSet = {};
 
-    const t1 = performance.now();
+    this._trace("getTools: accessing runtime");
     const router = this.rt.executionRouter;
     const memory = this.rt.memory;
     const craftStore = this.rt.craftStore;
     const shell = createShell(this.rt.sqliteFS);
-    console.log(`[proteus] getTools() runtime access: ${(performance.now() - t1).toFixed(1)}ms`);
+    this._trace("getTools: runtime ready");
 
     // ── 1. execute_tools: codemode sandbox with workspace.* + tools.* ──
     if (env.LOADER) {
       try {
-        const t2 = performance.now();
         const providers = router?.getProviders() ?? [];
-        console.log(`[proteus] getTools() getProviders: ${(performance.now() - t2).toFixed(1)}ms (${providers.length} providers: ${providers.map(p => p.name).join(", ")})`);
+        this._trace("getTools: providers", `${providers.length}: ${providers.map(p => p.name).join(", ")}`);
 
         // Inject crafted tools so they're callable as tools.* inside codemode
         const craftedToolSet: Record<string, { description: string; execute: Function }> = {};
-        const t3 = performance.now();
         try {
           const crafted = craftStore.list();
           for (const t of crafted) {
@@ -232,15 +253,15 @@ Summarize what you did after using tools.`;
             }
           }
         } catch { /* CraftStore may not be initialized yet */ }
-        console.log(`[proteus] getTools() craft eval: ${(performance.now() - t3).toFixed(1)}ms (${Object.keys(craftedToolSet).length} tools)`);
+        this._trace("getTools: crafted tools eval'd", `${Object.keys(craftedToolSet).length} tools`);
 
-        const t4 = performance.now();
+        this._trace("getTools: createExecuteTool start");
         tools.execute_tools = createExecuteTool({
           tools: craftedToolSet,
           providers,
           loader: env.LOADER as WorkerLoader,
         });
-        console.log(`[proteus] getTools() createExecuteTool: ${(performance.now() - t4).toFixed(1)}ms`);
+        this._trace("getTools: createExecuteTool done");
       } catch (err) {
         console.error("[proteus] createExecuteTool FAILED:", (err as Error).message, (err as Error).stack);
       }
@@ -396,7 +417,7 @@ Summarize what you did after using tools.`;
     // Cache the result for subsequent turns
     this._cachedTools = tools;
     this._cachedToolsKey = cacheKey;
-    console.log(`[proteus] getTools() total rebuild: ${(performance.now() - t0).toFixed(1)}ms — 5 tools: ${Object.keys(tools).join(", ")}`);
+    this._trace("getTools done (rebuilt)", `${Object.keys(tools).length} tools: ${Object.keys(tools).join(", ")}`);
     return tools;
     } catch (err) {
       console.error("[proteus] getTools() FAILED:", err);
@@ -418,15 +439,28 @@ Summarize what you did after using tools.`;
   // ── Think lifecycle hooks ──────────────────────────────────────
 
   beforeTurn(_ctx: TurnContext): TurnConfig | void {
-    const t0 = performance.now();
+    // beforeTurn fires INSIDE _runInferenceLoop, after getTools/getSystemPrompt/
+    // getModel and message preparation. It's the last hook before streamText().
+    // We set T0 here to measure the model-side latency (beforeTurn → first chunk).
+    // The getTools/getSystemPrompt/getModel traces have their own T0 relative
+    // timing from the same _turnTraceT0.
     this._turnToolCalls = [];
     this._turnStepCount = 0;
     this._turnStartedAt = Date.now();
     this._turnHadError = false;
-    console.log(`[proteus] beforeTurn: ${(performance.now() - t0).toFixed(1)}ms`);
+    this._firstChunkReceived = false;
+    this._trace("beforeTurn", "streamText() will be called next by Think SDK");
+  }
+
+  onChunk(_ctx: ChunkContext): void {
+    if (!this._firstChunkReceived) {
+      this._firstChunkReceived = true;
+      this._trace("FIRST CHUNK from model");
+    }
   }
 
   afterToolCall(ctx: ToolCallResultContext): void {
+    this._trace("afterToolCall", ctx.toolName);
     this._turnToolCalls.push({
       name: ctx.toolName,
       args: ctx.args,
@@ -436,9 +470,11 @@ Summarize what you did after using tools.`;
 
   onStepFinish(_ctx: StepContext): void {
     this._turnStepCount++;
+    this._trace("onStepFinish", `step ${this._turnStepCount}`);
   }
 
   async onChatResponse(result: ChatResponseResult) {
+    this._trace("onChatResponse", result.status);
     if (result.status !== "completed") return;
 
     const userMessages = this.messages.filter(m => m.role === "user");
