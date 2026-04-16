@@ -31,6 +31,13 @@ import { isoDate } from '../utils/date.js';
 import { upsertCraftedTool } from '../craft/conflict.js';
 import { periodicCraftConsolidation } from '../craft/consolidation.js';
 import { updateCraftScores } from '../craft/ema.js';
+
+/** Built-in tool names — crafted tool scoring ignores these */
+const BUILT_IN_TOOL_NAMES = new Set([
+  'search_memory', 'read_file', 'write_file', 'execute_code',
+  'save_note', 'list_tools', 'shell_exec', 'explore',
+  'read', 'write', 'edit', 'list', 'find', 'grep', 'delete',
+]);
 import { modifyScaffold } from '../scaffold/modify.js';
 import { runMCTS } from '../mcts/engine.js';
 
@@ -85,17 +92,9 @@ export class EvolutionEngine {
     const quality = await this.assessTurnQuality(turn);
 
     // Update EMA scores for any crafted tools that were used in this turn.
-    // This was previously dead code — updateCraftScores was never called.
     const craftedToolNames = turn.toolCalls
       .map(tc => tc.name)
-      .filter(name => {
-        const builtIns = new Set([
-          'search_memory', 'read_file', 'write_file', 'execute_code',
-          'save_note', 'list_tools', 'shell_exec', 'explore',
-          'read', 'write', 'edit', 'list', 'find', 'grep', 'delete',
-        ]);
-        return !builtIns.has(name);
-      });
+      .filter(name => !BUILT_IN_TOOL_NAMES.has(name));
     if (craftedToolNames.length > 0) {
       try {
         updateCraftScores(this.rt.storage.sql, craftedToolNames, quality);
@@ -117,7 +116,7 @@ export class EvolutionEngine {
 
     // High quality with tool usage → extract pattern to CraftStore
     if (quality > this.config.turnCraftThreshold && turn.toolCalls.length > 0) {
-      await this.extractPattern(turn);
+      await this.extractPattern(turn, quality);
     }
 
     // Check if session-level reflection is due
@@ -137,10 +136,11 @@ export class EvolutionEngine {
     if (!this.config.enabled) return;
 
     this.conversationCount++;
+    const alreadyReflected = this.turnsSinceReflection === 0; // 0 means onTurnComplete just reflected
     this.turnsSinceReflection = 0;
 
-    // Reflect on the entire session
-    if (session.turns.length >= 3) {
+    // Reflect on the entire session (skip if onTurnComplete already reflected this cycle)
+    if (session.turns.length >= 3 && !alreadyReflected) {
       await this.onSessionReflection();
     }
 
@@ -322,7 +322,7 @@ export class EvolutionEngine {
   }
 
   /** Extract a successful tool usage pattern into a reusable crafted tool */
-  private async extractPattern(turn: CompletedTurn): Promise<void> {
+  private async extractPattern(turn: CompletedTurn, quality: number = 0.7): Promise<void> {
     const meaningfulCalls = turn.toolCalls.filter(tc =>
       tc.name !== 'search_memory' && tc.name !== 'list_tools',
     );
@@ -343,15 +343,24 @@ export class EvolutionEngine {
     );
 
     try {
-      const m = generalized.match(/\{[\s\S]*\}/);
-      const parsed = JSON.parse(m?.[0] ?? '{}');
+      // Find valid JSON by trying from each { position (handles nested braces in code field)
+      let parsed: { name?: string; description?: string; code?: string; params?: unknown } = {};
+      const startIdx = generalized.indexOf('{');
+      if (startIdx >= 0) {
+        for (let end = generalized.length; end > startIdx; end--) {
+          if (generalized[end - 1] === '}') {
+            try { parsed = JSON.parse(generalized.slice(startIdx, end)); break; }
+            catch { continue; }
+          }
+        }
+      }
       if (!parsed.name || !parsed.code || parsed.code.startsWith('//')) return;
 
       await upsertCraftedTool(this.rt, {
         name: parsed.name,
         description: parsed.description ?? '',
         code: parsed.code,
-        score: 0.7,
+        score: quality,
       });
 
       this.emit({
