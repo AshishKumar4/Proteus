@@ -16,9 +16,11 @@ import type {
   LLM,
   Executor,
   Schedule,
+  Shell,
   MemorySearchResult,
 } from './types/primitives.js';
 import type { AgentRuntime, CraftStore, SpawnBranch, AbortBranch } from './types/agent-runtime.js';
+import type { ExecutionRouter } from './execution/types.js';
 
 export interface RuntimeComponents {
   sql: SqlExecutor;
@@ -39,6 +41,18 @@ export interface RuntimeComponents {
   /** Branch lifecycle callbacks */
   spawnBranch: SpawnBranch;
   abortBranch: AbortBranch;
+  /**
+   * Optional multi-executor router (workspace/nimbus/sandbox/laptop). When
+   * provided, the canonical `run` and `execute_tools` factories in core will
+   * consume it for routing. Absent → tools degrade gracefully.
+   */
+  executionRouter?: ExecutionRouter;
+  /**
+   * Optional POSIX shell bound to VFS. Required by the canonical `run` tool
+   * for workspace-scoped commands (fast path, no router indirection) and by
+   * the `execute_tools` new-Function fallback.
+   */
+  shell?: Shell;
 }
 
 /**
@@ -71,5 +85,7 @@ export function buildRuntime(components: RuntimeComponents): AgentRuntime {
     judgeModel: components.judgeModel,
     spawnBranch: components.spawnBranch,
     abortBranch: components.abortBranch,
+    executionRouter: components.executionRouter,
+    shell: components.shell,
   };
 }

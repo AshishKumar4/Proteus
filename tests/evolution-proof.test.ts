@@ -21,7 +21,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
   createAgent,
   openAgent,
-  buildAgentTools,
+  buildBuiltinTools,
   collectStepText,
   EvolutionEngine,
   initSearchTables,
@@ -112,7 +112,7 @@ async function chatTurn(
 
 // Challenge 1: RSA with tiny key — factor n, decrypt c
 const RSA_CHALLENGE_1 = `
-Solve this RSA crypto challenge. You MUST use execute_code to compute the answer.
+Solve this RSA crypto challenge. You MUST use execute_tools to compute the answer.
 
 Given:
   n = 3233 (public modulus, product of two primes)
@@ -126,7 +126,7 @@ Return ONLY the numeric value of m.
 
 // Challenge 2: Similar RSA but different numbers — should be faster with pattern
 const RSA_CHALLENGE_2 = `
-Solve this RSA crypto challenge. You MUST use execute_code to compute the answer.
+Solve this RSA crypto challenge. You MUST use execute_tools to compute the answer.
 
 Given:
   n = 5959 (public modulus, product of two primes)  
@@ -140,7 +140,7 @@ Return ONLY the numeric value of m.
 
 // Challenge 3: Dijkstra's algorithm — complex graph problem
 const DIJKSTRA_CHALLENGE_1 = `
-Implement Dijkstra's shortest path algorithm and solve this problem. Use execute_code.
+Implement Dijkstra's shortest path algorithm and solve this problem. Use execute_tools.
 
 Graph (adjacency list with weights):
   A -> B:4, C:2
@@ -153,7 +153,7 @@ Find the shortest distance from A to D. Return ONLY the number.
 
 // Challenge 4: Similar graph problem — should benefit from previous algorithm
 const DIJKSTRA_CHALLENGE_2 = `
-Find the shortest path using Dijkstra's algorithm. Use execute_code.
+Find the shortest path using Dijkstra's algorithm. Use execute_tools.
 
 Graph (adjacency list with weights):
   S -> A:7, B:2, C:3
@@ -167,7 +167,7 @@ Find the shortest distance from S to D. Return ONLY the number.
 
 // Challenge 5: Substitution cipher — decode
 const CIPHER_CHALLENGE = `
-Decode this substitution cipher. Use execute_code to try frequency analysis.
+Decode this substitution cipher. Use execute_tools to try frequency analysis.
 
 The cipher maps each letter to another letter. The ciphertext is:
 "GSVJF RXLWV RHHVX IVG"
@@ -213,10 +213,10 @@ describe('Evolution Proof', () => {
   let session1Results: TurnResult[] = [];
 
   test('session 1, turn 1: RSA challenge (learn the pattern)', async () => {
-    const tools = buildAgentTools(rt);
+    const tools = buildBuiltinTools({ rt, engine: new EvolutionEngine(rt, { enabled: false }) });
     const toolNames = Object.keys(tools);
     console.log(`    Tools available: ${toolNames.join(', ')}`);
-    expect(toolNames).toContain('execute_code');
+    expect(toolNames).toContain('execute_tools');
 
     const result = await chatTurn(model, rt, tools, RSA_CHALLENGE_1, 'session-1');
     session1Results.push(result);
@@ -226,7 +226,7 @@ describe('Evolution Proof', () => {
     console.log(`    Duration: ${result.durationMs}ms`);
 
     expect(result.text.length).toBeGreaterThan(0);
-    expect(result.toolCalls.some(tc => tc.name === 'execute_code')).toBe(true);
+    expect(result.toolCalls.some(tc => tc.name === 'execute_tools')).toBe(true);
 
     // Fire evolution — should extract pattern from successful tool usage
     await engine.onTurnComplete({
@@ -241,7 +241,7 @@ describe('Evolution Proof', () => {
   }, 600_000);
 
   test('session 1, turn 2: Dijkstra challenge (learn algorithm pattern)', async () => {
-    const tools = buildAgentTools(rt);
+    const tools = buildBuiltinTools({ rt, engine: new EvolutionEngine(rt, { enabled: false }) });
     const result = await chatTurn(model, rt, tools, DIJKSTRA_CHALLENGE_1, 'session-1');
     session1Results.push(result);
 
@@ -263,7 +263,7 @@ describe('Evolution Proof', () => {
   }, 600_000);
 
   test('session 1, turn 3: cipher challenge + session reflection', async () => {
-    const tools = buildAgentTools(rt);
+    const tools = buildBuiltinTools({ rt, engine: new EvolutionEngine(rt, { enabled: false }) });
     const result = await chatTurn(model, rt, tools, CIPHER_CHALLENGE, 'session-1');
     session1Results.push(result);
 
@@ -333,7 +333,7 @@ describe('Evolution Proof', () => {
 
   test('session 2, turn 1: similar RSA challenge (should benefit from pattern)', async () => {
     // Rebuild tools — should now include crafted tools from session 1
-    const tools = buildAgentTools(rt);
+    const tools = buildBuiltinTools({ rt, engine: new EvolutionEngine(rt, { enabled: false }) });
     const toolNames = Object.keys(tools);
     console.log(`    Tools available: ${toolNames.join(', ')}`);
 
@@ -352,7 +352,7 @@ describe('Evolution Proof', () => {
   }, 600_000);
 
   test('session 2, turn 2: similar graph challenge (should benefit from pattern)', async () => {
-    const tools = buildAgentTools(rt);
+    const tools = buildBuiltinTools({ rt, engine: new EvolutionEngine(rt, { enabled: false }) });
     const result = await chatTurn(model, rt, tools, DIJKSTRA_CHALLENGE_2, 'session-2');
     session2Results.push(result);
 

@@ -14,7 +14,7 @@ import {
   createAgent,
   collectStepText,
   EvolutionEngine,
-  buildAgentTools,
+  buildBuiltinTools,
   initSearchTables,
   initScaffoldTables,
   initCraftScoreTables,
@@ -121,9 +121,9 @@ describe('E2E Lifecycle', () => {
     initSearchTables(rt.storage.execRaw);
     initScaffoldTables(rt.storage.execRaw);
     initCraftScoreTables(rt.storage.execRaw);
-    tools = buildAgentTools(rt);
     events = [];
     engine = new EvolutionEngine(rt, { enabled: true, sessionReflectionInterval: 4 });
+    tools = buildBuiltinTools({ rt, engine });
     engine.onEvent(e => events.push(e));
     turns = [];
 

@@ -8,11 +8,12 @@
 
 import * as readline from 'node:readline';
 import { type CoreMessage, type ToolSet } from 'ai';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { AgentRuntime, AgentInfo, SearchNode, LLMProviderConfig } from '@proteus/core';
 import {
   EvolutionEngine,
-  buildAgentTools,
+  buildBuiltinTools,
+  buildSystemPromptSync,
+  createChatModel,
   runChat,
   resolveMaxSteps,
   type CompletedTurn,
@@ -38,14 +39,21 @@ export async function runChatLoop(opts: ChatLoopOpts): Promise<void> {
   const { rt, dbSize, llmConfig, refreshInfo, noAutoEvolve } = opts;
   let info = opts.info;
 
-  const provider = createOpenAICompatible({
-    name: llmConfig.name, baseURL: llmConfig.baseURL, headers: llmConfig.headers,
+  const model = createChatModel({
+    kind: 'openai-compat',
+    name: llmConfig.name,
+    baseURL: llmConfig.baseURL,
+    headers: llmConfig.headers,
+    modelId: llmConfig.model,
   });
-  const model = provider.chatModel(llmConfig.model);
-  const tools: ToolSet = buildAgentTools(rt);
 
   const engine = new EvolutionEngine(rt, { enabled: !noAutoEvolve });
   engine.onEvent(event => printEvolutionEvent(event.type, event.message));
+
+  // v2.0: same 5-tool surface as CF. No codemodeLoader → new-Function fallback
+  // in execute_tools (workspaceApi + crafted codemode.* proxy). No wrapExplore
+  // (CLI has no runFiber). Crafted tools filtered by effective-score.
+  const tools: ToolSet = buildBuiltinTools({ rt, engine });
 
   printChatBanner(info, Object.keys(tools), !noAutoEvolve);
 
@@ -95,8 +103,12 @@ export async function runChatLoop(opts: ChatLoopOpts): Promise<void> {
     }
 
     const turnStart = Date.now();
-    const soul = rt.storage.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`[0]?.purpose ?? '';
     const knowledge = (await rt.memory.read('memory/MEMORY.md'))?.slice(0, 2000) ?? '';
+    const executorNames = (rt.executionRouter?.listExecutors() ?? []).map(e => e.name);
+    const systemPrompt = buildSystemPromptSync(rt, {
+      extraKnowledge: knowledge || undefined,
+      registeredExecutors: executorNames,
+    });
 
     history.push({ role: 'user', content: input });
 
@@ -112,7 +124,7 @@ export async function runChatLoop(opts: ChatLoopOpts): Promise<void> {
     try {
       for await (const event of runChat({
         model,
-        system: `${soul}\n\n## Knowledge\n${knowledge}`,
+        system: systemPrompt,
         history,
         tools,
         maxSteps: resolveMaxSteps(),

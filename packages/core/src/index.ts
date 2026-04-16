@@ -13,7 +13,8 @@ export {
   type EvolutionConfig, type EvolutionEvent, type EvolutionListener,
   type CompletedTurn, type CompletedSession, type ToolCallRecord,
 } from './evolution/types.js';
-export { buildAgentTools } from './evolution/tools.js';
+// v2.0: legacy `buildAgentTools` (6-tool surface) removed in favor of the
+// canonical `buildBuiltinTools` exported below. See docs/V2-MIGRATION.md.
 
 // Configuration
 export { DEFAULT_CONFIG, DEFAULT_MAX_STEPS, mergeConfig, resolveMaxSteps } from './config.js';

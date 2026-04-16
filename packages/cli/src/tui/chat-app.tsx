@@ -13,11 +13,12 @@ import { createCliRenderer } from '@opentui/core';
 import { createRoot, useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CoreMessage, ToolSet } from 'ai';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { AgentRuntime, AgentInfo, LLMProviderConfig, SearchNode } from '@proteus/core';
 import {
   EvolutionEngine,
-  buildAgentTools,
+  buildBuiltinTools,
+  buildSystemPromptSync,
+  createChatModel,
   runChat,
   resolveMaxSteps,
   type CompletedTurn,
@@ -55,11 +56,13 @@ function ChatApp({ rt, info: initialInfo, dbSize, llmConfig, refreshInfo, noAuto
   const msgIdRef = useRef(0);
   const sessionTurnsRef = useRef<CompletedTurn[]>([]);
 
-  const provider = createOpenAICompatible({
-    name: llmConfig.name, baseURL: llmConfig.baseURL, headers: llmConfig.headers,
+  const model = createChatModel({
+    kind: 'openai-compat',
+    name: llmConfig.name,
+    baseURL: llmConfig.baseURL,
+    headers: llmConfig.headers,
+    modelId: llmConfig.model,
   });
-  const model = provider.chatModel(llmConfig.model);
-  const tools: ToolSet = buildAgentTools(rt);
 
   const engineRef = useRef<EvolutionEngine | null>(null);
   if (!engineRef.current) {
@@ -68,6 +71,10 @@ function ChatApp({ rt, info: initialInfo, dbSize, llmConfig, refreshInfo, noAuto
       addMessage({ role: 'evolution', content: `[${event.type}] ${event.message}` });
     });
   }
+
+  // v2.0: same 5-tool surface as CF. Engine required for explore; no
+  // codemode/fiber/broadcast → CLI-friendly defaults throughout.
+  const tools: ToolSet = buildBuiltinTools({ rt, engine: engineRef.current });
 
   const addMessage = useCallback((msg: Omit<DisplayMessage, 'id'>) => {
     const id = `msg-${++msgIdRef.current}`;
@@ -138,8 +145,12 @@ function ChatApp({ rt, info: initialInfo, dbSize, llmConfig, refreshInfo, noAuto
     setStreamingText('');
 
     const turnStart = Date.now();
-    const soul = rt.storage.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`[0]?.purpose ?? '';
     const knowledge = (await rt.memory.read('memory/MEMORY.md'))?.slice(0, 2000) ?? '';
+    const executorNames = (rt.executionRouter?.listExecutors() ?? []).map(e => e.name);
+    const systemPrompt = buildSystemPromptSync(rt, {
+      extraKnowledge: knowledge || undefined,
+      registeredExecutors: executorNames,
+    });
 
     historyRef.current.push({ role: 'user', content: text });
 
@@ -151,7 +162,7 @@ function ChatApp({ rt, info: initialInfo, dbSize, llmConfig, refreshInfo, noAuto
     try {
       for await (const event of runChat({
         model,
-        system: `${soul}\n\n## Knowledge\n${knowledge}`,
+        system: systemPrompt,
         history: historyRef.current,
         tools,
         maxSteps: resolveMaxSteps(),

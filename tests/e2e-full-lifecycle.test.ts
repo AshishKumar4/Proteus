@@ -17,7 +17,9 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
   createAgent,
   openAgent,
-  buildAgentTools,
+  buildBuiltinTools,
+  BUILTIN_TOOLS,
+  EvolutionEngine,
   collectStepText,
   initSearchTables,
   initScaffoldTables,
@@ -134,7 +136,7 @@ describe('E2E Full Lifecycle', () => {
     initScaffoldTables(rt.storage.execRaw);
     initCraftScoreTables(rt.storage.execRaw);
 
-    tools = buildAgentTools(rt);
+    tools = buildBuiltinTools({ rt, engine: new EvolutionEngine(rt, { enabled: false }) });
     model = createModel();
     agentId = rt.identity.id;
     agentName = rt.identity.name;
@@ -174,15 +176,10 @@ describe('E2E Full Lifecycle', () => {
 
   // ── Step 2: Verify tools ─────────────────────────────────────
 
-  test('2. buildAgentTools returns all 6 tools', () => {
+  test('2. buildBuiltinTools returns the 5 canonical tools', () => {
     const names = Object.keys(tools);
-    expect(names).toContain('search_memory');
-    expect(names).toContain('read_file');
-    expect(names).toContain('write_file');
-    expect(names).toContain('execute_code');
-    expect(names).toContain('save_note');
-    expect(names).toContain('list_tools');
-    expect(names.length).toBe(6);
+    for (const canonical of BUILTIN_TOOLS) expect(names).toContain(canonical);
+    expect(names.length).toBe(5);
     console.log(`  Tools: ${names.join(', ')}`);
   });
 
@@ -196,12 +193,12 @@ describe('E2E Full Lifecycle', () => {
     expect(turn.assistantResponse.toLowerCase()).toContain('4');
   }, 120_000);
 
-  // ── Step 4: Chat turn 2 — should use execute_code ───────────
+  // ── Step 4: Chat turn 2 — should use execute_tools ──────────
 
   test('4. chat turn 2: code execution', async () => {
     const turn = await chatTurn(
       model, rt, tools,
-      'Write a JS function to check if a number is prime, then test it with 7, 10, and 13. Use the execute_code tool.',
+      'Write a JS function to check if a number is prime, then test it with 7, 10, and 13. Use the execute_tools tool.',
     );
     console.log(`  Response (${turn.assistantResponse.length} chars): ${turn.assistantResponse.slice(0, 200)}`);
     console.log(`  Steps: ${turn.steps}, Tools: ${turn.toolCalls.map(t => t.name).join(', ') || 'none'}`);
