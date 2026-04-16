@@ -1,21 +1,18 @@
 /**
  * OrchestratorAgent — self-evolving chat agent extending Think.
  *
- * Think auto-includes workspace tools (read, write, edit, list, find, grep, delete)
- * that target Think's internal Workspace storage. We OVERWRITE all 7 with our own
- * SqliteFS-backed implementations in getTools(), unifying the two filesystems.
+ * 13 top-level tools the LLM sees:
+ *   execute       — codemode sandbox (workspace.*, nimbus.*, sandbox.*, laptop.* APIs)
+ *   explore       — MCTS tree search via durable fiber
+ *   read/write/edit/list/find/grep/delete — filesystem, optional executor param
+ *   shell_exec    — POSIX shell, optional executor param
+ *   save_note     — append to MEMORY.md
+ *   search_memory — FTS5 search over memory
+ *   list_tools    — list built-in + crafted tools
  *
- * The merge order in Think._runInferenceLoop is:
- *   { ...workspaceTools, ...baseTools(getTools()), ...extensions, ... }
- * Our tools come AFTER Think's, so same-named keys replace them.
- *
- * Consolidated tool list (no duplicates):
- *   Filesystem: read, write, edit, list, find, grep, delete (SqliteFS)
- *   Shell:      shell_exec (POSIX emulator over SqliteFS)
- *   Memory:     search_memory, save_note
- *   Code:       execute_code (codemode sandbox or new Function fallback)
- *   Meta:       list_tools, explore (MCTS)
- *   Dynamic:    crafted tools from CraftStore
+ * Filesystem tools accept an optional `executor` string param to route through
+ * a specific execution provider (nimbus, sandbox, laptop). Default: workspace.
+ * These names overwrite Think's built-in workspace tools.
  */
 
 import { callable } from "agents";
@@ -39,6 +36,7 @@ import {
   type SessionWriter, type SessionMessage,
 } from "@proteus/core";
 import { createCFRuntime, type CFRuntime } from "./runtime.js";
+import { createShell } from "@proteus/agent-utils/shell";
 
 const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
 const SESSION_REFLECTION_INTERVAL = 5; // turns between session reflections
@@ -127,46 +125,45 @@ You are a Proteus agent — a self-evolving AI running as a Cloudflare Durable O
 
 ## Tools
 
-You have 2 tools: **execute** and **explore**.
+You have 13 tools:
 
-### execute
-Write JavaScript code. All operations use the \`workspace\` namespace:
-- \`workspace.readFile(path)\` — read a file (returns string or "File not found")
-- \`workspace.writeFile(path, content)\` — write/create a file (auto-creates directories)
-- \`workspace.readdir(path)\` — list directory entries
-- \`workspace.exists(path)\` — check if a path exists
-- \`workspace.exec(command)\` — run a POSIX shell command (cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq; supports pipes | and redirects >, >>)
-- \`workspace.searchMemory(query)\` — full-text search over your long-term memory
-- \`workspace.saveNote(content)\` — append a note to memory/MEMORY.md (FTS-indexed)
-- \`workspace.listTools()\` — list your crafted tools
-- \`workspace.createTool(name, description, code)\` — create a reusable tool stored in CraftStore (visible in the Tools pane, persists across conversations)
+### Filesystem tools (accept optional \`executor\` param)
+- **read** — read a file with line numbers (offset/limit for large files)
+- **write** — write content to a file (creates parent dirs)
+- **edit** — targeted search/replace in a file
+- **list** — list directory contents
+- **find** — find files by glob pattern
+- **grep** — search file contents with regex
+- **delete** — delete a file or directory
+- **shell_exec** — run a POSIX shell command (cat, grep, find, sed, ls, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq; pipes and redirects supported)
 
-Example:
-\`\`\`javascript
-const files = await workspace.readdir("/");
-const content = await workspace.readFile("/src/main.ts");
-await workspace.exec("grep -rn TODO /src");
-await workspace.saveNote("User prefers TypeScript strict mode");
-\`\`\`
+By default these operate on your workspace (DO-local SqliteFS). Pass \`executor: "nimbus"\` or \`executor: "sandbox"\` to target a remote execution environment when available.
 
-### explore
-Deeply investigate a complex subproblem using Monte Carlo Tree Search. Spawns multiple solution branches, evaluates them, and returns the best approach. Use for architecture decisions, design tradeoffs, or multi-step problem solving.
+### Memory tools
+- **save_note** — append a note to long-term memory (MEMORY.md, FTS-indexed)
+- **search_memory** — full-text search over long-term memory
+
+### Meta tools
+- **list_tools** — list all built-in and crafted tools
+- **execute** — run JavaScript code in a sandboxed environment with \`workspace.*\`, \`nimbus.*\`, \`sandbox.*\`, \`laptop.*\` APIs (for complex multi-step orchestration)
+- **explore** — MCTS tree search for complex subproblems (architecture decisions, multi-step problem solving)
 
 ## Evolution
 
 Your capabilities improve automatically:
-- **Turn-level**: after each response, quality is scored and successful patterns are extracted
-- **Session-level**: every ~5 turns, the system reflects and consolidates learnings
-- **Lifetime-level**: MCTS exploration (via explore) discovers better approaches
-- **Tool crafting**: good tool usage patterns are automatically extracted into reusable CraftStore tools. You can also create tools explicitly with \`workspace.createTool(name, description, code)\`. Writing files to /tools/ does NOT create tools — use createTool instead.
+- **Turn-level**: quality scoring and pattern extraction after each response
+- **Session-level**: reflection and consolidation every ~5 turns
+- **Lifetime**: MCTS exploration discovers better approaches
+- **Tool crafting**: good patterns are automatically extracted into reusable CraftStore tools
 
 ## Guidelines
 
-- Use execute for ALL file operations, shell commands, and memory access
-- Use explore only for genuinely complex multi-path problems
-- After using tools, summarize what you did and what you found
-- Save important information to memory with workspace.saveNote() — you'll be able to recall it later
-- Be direct and accurate about your capabilities — you can read/write files, run shell commands, and search memory, but you cannot access the internet, deploy code, or run servers`;
+- Use direct tools (read, write, grep, shell_exec, etc.) for simple operations
+- Use execute for complex multi-step JS orchestration
+- Use explore for genuinely difficult multi-path problems
+- Save important information with save_note — recall with search_memory
+- Summarize what you did after using tools
+- Be honest: you can read/write files, run shell commands, and search memory, but you cannot access the internet, deploy code, or run servers`;
     } catch {
       return "You are a helpful coding assistant.";
     }
@@ -175,28 +172,30 @@ Your capabilities improve automatically:
   getTools(): ToolSet {
     console.log("[proteus] getTools() called");
     try {
-    // ── 2-tool architecture ──────────────────────────────────────
-    // Only 2 top-level tools: execute (codemode sandbox) + explore (MCTS).
-    // Everything else is a namespaced API inside the codemode sandbox:
-    //   workspace.readFile(), workspace.exec(), workspace.searchMemory()
-    //   nimbus.exec(), sandbox.exec(), laptop.exec() (when connected)
-
     const orchestrator = this;
     const env = this.env as Env & Record<string, unknown>;
     const tools: ToolSet = {};
 
-    // ── Tool 1: execute (codemode sandbox) ───────────────────────
-    // All file/shell/memory operations are workspace.* APIs inside the sandbox.
-    // The LLM writes JS code: workspace.readFile("/src/main.ts")
+    // Helper: resolve an executor provider by name, falling back to workspace
+    const router = this.rt.executionRouter;
+    const defaultProvider = router?.getProvider("workspace");
+    function getExec(name?: string) {
+      if (!name || name === "workspace") return defaultProvider;
+      return router?.getProvider(name) ?? defaultProvider;
+    }
+    // Default workspace resources for direct tools
+    const vfs = this.rt.storage.vfs;
+    const memory = this.rt.memory;
+    const craftStore = this.rt.craftStore;
+    const shell = createShell(this.rt.sqliteFS);
+
+    // ── execute: codemode sandbox ────────────────────────────────
     if (env.LOADER) {
       try {
-        // Gather all execution providers (workspace is always available,
-        // nimbus/sandbox/laptop are stubs until connected)
-        const providers = this.rt.executionRouter?.getProviders() ?? [];
-
+        const providers = router?.getProviders() ?? [];
         tools.execute = createExecuteTool({
-          tools: {},   // no codemode.* domain tools — everything is in providers
-          providers,   // workspace.*, nimbus.*, sandbox.*, laptop.*
+          tools: {},
+          providers,
           loader: env.LOADER as WorkerLoader,
         });
       } catch (err) {
@@ -204,17 +203,14 @@ Your capabilities improve automatically:
       }
     }
 
-    // ── Tool 2: explore (MCTS) ───────────────────────────────────
-    // Needs fiber (durable checkpoint) — can't run inside codemode sandbox.
+    // ── explore: MCTS ────────────────────────────────────────────
     tools.explore = tool({
-      description: "Deeply explore a complex subproblem using Monte Carlo Tree Search. " +
-        "Spawns multiple exploration branches, evaluates them, and returns the best approach. " +
-        "Use this for difficult design decisions, architecture choices, or multi-step problem solving.",
+      description: "MCTS tree search for complex subproblems. Spawns branches, evaluates approaches, returns the best.",
       inputSchema: jsonSchema<{ task: string; budget?: number }>({
         type: "object",
         properties: {
           task: { type: "string", description: "The subproblem to explore" },
-          budget: { type: "number", description: "Number of MCTS iterations (default: 5)" },
+          budget: { type: "number", description: "MCTS iterations (default: 5)" },
         },
         required: ["task"],
       }),
@@ -236,14 +232,236 @@ Your capabilities improve automatically:
             const best = orchestrator.sql<{ action: string; value: number }>`
               SELECT action, value FROM search_nodes WHERE status = 'terminal'
               ORDER BY value DESC LIMIT 1`;
-            if (best.length > 0) {
-              return `Exploration complete. Best approach (score ${best[0]!.value.toFixed(2)}): ${best[0]!.action}`;
-            }
-            return "Exploration complete. Check the MCTS tree for detailed results.";
+            return best.length > 0
+              ? `Exploration complete. Best approach (score ${best[0]!.value.toFixed(2)}): ${best[0]!.action}`
+              : "Exploration complete. Check the MCTS tree for detailed results.";
           });
         } catch (err) {
           return `Exploration failed: ${(err as Error).message}`;
         }
+      },
+    });
+
+    // ── Direct filesystem + shell tools ──────────────────────────
+    // Each accepts optional `executor` param to route through a specific
+    // provider (nimbus, sandbox, laptop). Default: workspace (SqliteFS).
+    // These names overwrite Think's built-in workspace tools.
+
+    tools.read = tool({
+      description: "Read a file. Returns content with line numbers.",
+      inputSchema: jsonSchema<{ path: string; offset?: number; limit?: number; executor?: string }>({
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path" },
+          offset: { type: "number", description: "1-indexed start line" },
+          limit: { type: "number", description: "Max lines to return" },
+          executor: { type: "string", description: "Executor name (workspace, nimbus, sandbox, laptop). Default: workspace." },
+        },
+        required: ["path"],
+      }),
+      execute: async (args: { path: string; offset?: number; limit?: number; executor?: string }) => {
+        const exec = getExec(args.executor);
+        if (exec?.tools.readFile) {
+          const content = await exec.tools.readFile.execute(args.path) as string;
+          if (content.startsWith("File not found")) return content;
+          const lines = content.split("\n");
+          const start = Math.max(0, (args.offset ?? 1) - 1);
+          const end = args.limit ? start + args.limit : lines.length;
+          return lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n") || "(empty file)";
+        }
+        const content = await vfs.readFile(args.path, { encoding: "utf8" }) as string | null;
+        if (content === null) return `File not found: ${args.path}`;
+        const lines = content.split("\n");
+        const start = Math.max(0, (args.offset ?? 1) - 1);
+        const end = args.limit ? start + args.limit : lines.length;
+        return lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n") || "(empty file)";
+      },
+    });
+
+    tools.write = tool({
+      description: "Write content to a file. Creates parent directories.",
+      inputSchema: jsonSchema<{ path: string; content: string; executor?: string }>({
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path" },
+          content: { type: "string", description: "Content to write" },
+          executor: { type: "string", description: "Executor (default: workspace)" },
+        },
+        required: ["path", "content"],
+      }),
+      execute: async (args: { path: string; content: string; executor?: string }) => {
+        const exec = getExec(args.executor);
+        if (exec?.tools.writeFile) return exec.tools.writeFile.execute(args.path, args.content) as Promise<string>;
+        await vfs.writeFile(args.path, args.content);
+        if (args.path.startsWith("memory/")) await memory.index(args.path);
+        return `Written ${args.content.length} bytes to ${args.path}`;
+      },
+    });
+
+    tools.edit = tool({
+      description: "Targeted string replacement in a file.",
+      inputSchema: jsonSchema<{ path: string; old_string: string; new_string: string; executor?: string }>({
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path" },
+          old_string: { type: "string", description: "Exact text to find (empty = create new file)" },
+          new_string: { type: "string", description: "Replacement text" },
+          executor: { type: "string", description: "Executor (default: workspace)" },
+        },
+        required: ["path", "old_string", "new_string"],
+      }),
+      execute: async (args: { path: string; old_string: string; new_string: string; executor?: string }) => {
+        const exec = getExec(args.executor);
+        const readFn = exec?.tools.readFile?.execute ?? (async (p: unknown) => await vfs.readFile(String(p), { encoding: "utf8" }));
+        const writeFn = exec?.tools.writeFile?.execute ?? (async (p: unknown, c: unknown) => { await vfs.writeFile(String(p), String(c)); return `Written to ${p}`; });
+
+        if (!args.old_string) {
+          await writeFn(args.path, args.new_string);
+          return `Created ${args.path} (${args.new_string.length} bytes)`;
+        }
+        const content = await readFn(args.path) as string | null;
+        if (!content || content.startsWith?.("File not found")) return `File not found: ${args.path}`;
+        if (!content.includes(args.old_string)) return `old_string not found in ${args.path}`;
+        const count = content.split(args.old_string).length - 1;
+        if (count > 1) return `Found ${count} matches — provide more context to identify a unique match`;
+        await writeFn(args.path, content.replace(args.old_string, args.new_string));
+        return `Edited ${args.path}`;
+      },
+    });
+
+    tools.list = tool({
+      description: "List files and directories at a path.",
+      inputSchema: jsonSchema<{ path?: string; executor?: string }>({
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Directory path (default: /)" },
+          executor: { type: "string", description: "Executor (default: workspace)" },
+        },
+      }),
+      execute: async (args: { path?: string; executor?: string }) => {
+        const exec = getExec(args.executor);
+        if (exec?.tools.readdir) {
+          const entries = await exec.tools.readdir.execute(args.path || "/");
+          return Array.isArray(entries) ? entries.join("\n") : String(entries);
+        }
+        const result = await shell.exec(`ls -la ${args.path || "/"}`);
+        return result.stdout || "(empty directory)";
+      },
+    });
+
+    tools.find = tool({
+      description: "Find files matching a glob pattern.",
+      inputSchema: jsonSchema<{ pattern: string; executor?: string }>({
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: 'Glob pattern (e.g. "**/*.ts")' },
+          executor: { type: "string", description: "Executor (default: workspace)" },
+        },
+        required: ["pattern"],
+      }),
+      execute: async (args: { pattern: string; executor?: string }) => {
+        const exec = getExec(args.executor);
+        if (exec?.tools.exec) return exec.tools.exec.execute(`find / -name '${args.pattern}'`) as Promise<string>;
+        const result = await shell.exec(`find / -name '${args.pattern}'`);
+        return result.stdout || "No files found.";
+      },
+    });
+
+    tools.grep = tool({
+      description: "Search file contents using regex. Returns matching lines with paths and line numbers.",
+      inputSchema: jsonSchema<{ pattern: string; path?: string; executor?: string }>({
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "Regex or fixed string" },
+          path: { type: "string", description: "Directory to search (default: /)" },
+          executor: { type: "string", description: "Executor (default: workspace)" },
+        },
+        required: ["pattern"],
+      }),
+      execute: async (args: { pattern: string; path?: string; executor?: string }) => {
+        const exec = getExec(args.executor);
+        if (exec?.tools.exec) return exec.tools.exec.execute(`grep -rn '${args.pattern}' ${args.path || "/"}`) as Promise<string>;
+        const result = await shell.exec(`grep -rn '${args.pattern}' ${args.path || "/"}`);
+        return result.stdout || "No matches found.";
+      },
+    });
+
+    tools.delete = tool({
+      description: "Delete a file or directory.",
+      inputSchema: jsonSchema<{ path: string; executor?: string }>({
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path to delete" },
+          executor: { type: "string", description: "Executor (default: workspace)" },
+        },
+        required: ["path"],
+      }),
+      execute: async (args: { path: string; executor?: string }) => {
+        const exec = getExec(args.executor);
+        if (exec?.tools.exec) return exec.tools.exec.execute(`rm -rf ${args.path}`) as Promise<string>;
+        await vfs.unlink(args.path);
+        return `Deleted ${args.path}`;
+      },
+    });
+
+    tools.shell_exec = tool({
+      description: "Run a POSIX shell command. Supports cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq. Pipes (|) and redirects (>, >>) work.",
+      inputSchema: jsonSchema<{ command: string; executor?: string }>({
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Shell command" },
+          executor: { type: "string", description: "Executor (default: workspace)" },
+        },
+        required: ["command"],
+      }),
+      execute: async (args: { command: string; executor?: string }) => {
+        const exec = getExec(args.executor);
+        if (exec?.tools.exec) return exec.tools.exec.execute(args.command) as Promise<string>;
+        const result = await shell.exec(args.command);
+        if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
+        return result.stdout || "(no output)";
+      },
+    });
+
+    // ── Memory tools ─────────────────────────────────────────────
+    tools.save_note = tool({
+      description: "Save a note to long-term memory (MEMORY.md). FTS-indexed for later search.",
+      inputSchema: jsonSchema<{ content: string }>({
+        type: "object",
+        properties: { content: { type: "string", description: "Note content" } },
+        required: ["content"],
+      }),
+      execute: async (args: { content: string }) => {
+        const ts = new Date().toISOString().split("T")[0];
+        await memory.append("memory/MEMORY.md", `\n### Note (${ts})\n${args.content}\n`);
+        await memory.index("memory/MEMORY.md");
+        return "Note saved to memory.";
+      },
+    });
+
+    tools.search_memory = tool({
+      description: "Search long-term memory using full-text search. Returns matching passages.",
+      inputSchema: jsonSchema<{ query: string }>({
+        type: "object",
+        properties: { query: { type: "string", description: "Search query" } },
+        required: ["query"],
+      }),
+      execute: async (args: { query: string }) => {
+        const results = await memory.search(args.query, 10);
+        if (results.length === 0) return "No results found.";
+        return results.map(r => `[${r.path}:${r.startLine}-${r.endLine}] (score ${r.score.toFixed(2)})\n${r.snippet}`).join("\n\n");
+      },
+    });
+
+    tools.list_tools = tool({
+      description: "List all available tools including dynamically crafted ones.",
+      inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
+      execute: async () => {
+        const builtIn = ["execute", "explore", "read", "write", "edit", "list", "find", "grep", "delete", "shell_exec", "save_note", "search_memory", "list_tools"];
+        const crafted = craftStore.list();
+        const lines = builtIn.map(n => `[built-in] ${n}`);
+        for (const t of crafted) lines.push(`[crafted] ${t.name}: ${t.description}`);
+        return lines.join("\n");
       },
     });
 
@@ -457,7 +675,11 @@ Your capabilities improve automatically:
       name: t.name, description: t.description, scope: t.scope,
     }));
     return {
-      builtIn: ["execute", "explore"],
+      builtIn: [
+        "execute", "explore",
+        "read", "write", "edit", "list", "find", "grep", "delete",
+        "shell_exec", "save_note", "search_memory", "list_tools",
+      ],
       crafted,
     };
   }
@@ -481,19 +703,19 @@ Your capabilities improve automatically:
 
   @callable() async getToolDescriptions() {
     const builtIn = [
-      {
-        name: "execute",
-        description: "Run JavaScript code in a sandboxed environment. " +
-          "APIs: workspace.readFile(path), workspace.writeFile(path, content), workspace.readdir(path), " +
-          "workspace.exists(path), workspace.exec(command) [POSIX shell], workspace.searchMemory(query) [FTS5], " +
-          "workspace.saveNote(content) [append to MEMORY.md], workspace.listTools().",
-      },
-      {
-        name: "explore",
-        description: "MCTS tree search for complex subproblems. " +
-          "Spawns multiple solution branches, evaluates them via backpropagation, returns the best approach. " +
-          "Use for architecture decisions, design tradeoffs, or multi-step problem solving.",
-      },
+      { name: "execute", description: "Run JavaScript in a sandboxed codemode environment with workspace.*, nimbus.*, sandbox.*, laptop.* APIs." },
+      { name: "explore", description: "MCTS tree search for complex subproblems. Spawns branches, evaluates, returns the best approach." },
+      { name: "read", description: "Read a file with line numbers. Optional executor param for remote targets." },
+      { name: "write", description: "Write content to a file. Creates parent directories. Optional executor param." },
+      { name: "edit", description: "Targeted string replacement in a file. Optional executor param." },
+      { name: "list", description: "List files and directories. Optional executor param." },
+      { name: "find", description: "Find files matching a glob pattern. Optional executor param." },
+      { name: "grep", description: "Search file contents with regex. Returns matches with line numbers. Optional executor param." },
+      { name: "delete", description: "Delete a file or directory. Optional executor param." },
+      { name: "shell_exec", description: "Run a POSIX shell command (cat, grep, find, sed, ls, etc.). Optional executor param." },
+      { name: "save_note", description: "Save a note to long-term memory (MEMORY.md). FTS-indexed." },
+      { name: "search_memory", description: "Search long-term memory using full-text search." },
+      { name: "list_tools", description: "List all available tools including dynamically crafted ones." },
     ];
     const crafted = this.rt.craftStore.list().map(t => ({
       name: t.name, description: t.description || "Crafted tool", isLearned: true,
@@ -514,6 +736,55 @@ Your capabilities improve automatically:
 
   @callable() async getExecutors() {
     return this.rt.executionRouter?.listExecutors() ?? [];
+  }
+
+  @callable() async getExecutorOutput(executorId: string, limit: number = 50) {
+    return this.sql`SELECT id, executor, command, stdout, stderr, exit_code, created_at
+      FROM executor_output WHERE executor = ${executorId}
+      ORDER BY created_at DESC LIMIT ${limit}`;
+  }
+
+  @callable() async executeInExecutor(executorId: string, command: string) {
+    const provider = this.rt.executionRouter?.getProvider(executorId);
+    if (!provider) return { error: `Executor "${executorId}" not found` };
+    if (!provider.isAvailable()) return { error: `Executor "${executorId}" is not available` };
+
+    const execTool = provider.tools.exec;
+    if (!execTool) return { error: `Executor "${executorId}" has no exec tool` };
+
+    try {
+      const result = await execTool.execute(command);
+      const stdout = typeof result === 'string' ? result : JSON.stringify(result);
+      const isError = stdout.startsWith('Error') || stdout.startsWith('exit');
+
+      this.sql`INSERT INTO executor_output (executor, command, stdout, stderr, exit_code)
+        VALUES (${executorId}, ${command}, ${stdout}, ${isError ? stdout : ''}, ${isError ? 1 : 0})`;
+
+      this.broadcast(JSON.stringify({
+        type: 'executor-output', executor: executorId, command, stdout,
+        stderr: isError ? stdout : '', exitCode: isError ? 1 : 0, timestamp: Date.now(),
+      }));
+
+      return { stdout, stderr: isError ? stdout : '', exitCode: isError ? 1 : 0 };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.sql`INSERT INTO executor_output (executor, command, stderr, exit_code)
+        VALUES (${executorId}, ${command}, ${errMsg}, ${1})`;
+      return { error: errMsg, exitCode: 1 };
+    }
+  }
+
+  @callable() async getExecutorFiles(executorId: string, path: string) {
+    const provider = this.rt.executionRouter?.getProvider(executorId);
+    if (!provider) return { error: `Executor "${executorId}" not found` };
+    const readdirTool = provider.tools.readdir;
+    if (!readdirTool) return { error: `Executor "${executorId}" has no readdir tool` };
+    try {
+      const result = await readdirTool.execute(path || '/');
+      return { entries: result };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   @callable() async getAvailableModels() {
