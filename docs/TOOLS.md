@@ -1,82 +1,129 @@
-# Agent Tools
+# Agent Tools — 5-Tool Architecture
 
-The agent has 8 built-in domain tools, dynamically-learned crafted tools, and Think's 7 workspace tools.
+The agent exposes exactly **5 top-level tools** to the LLM. All filesystem operations are available as `workspace.*` APIs inside the `execute_tools` codemode sandbox. Crafted tools from the CraftStore are injected as `tools.*`.
 
-## Built-in Domain Tools
+## Top-Level Tools
 
-| Tool | Description | Implementation |
-|------|-------------|----------------|
-| `search_memory` | Search long-term memory using FTS5 full-text search with BM25 ranking | `rt.memory.search(query, limit)` → MemoryStore FTS5 MATCH |
-| `read_file` | Read a file from the agent's virtual filesystem | `rt.memory.read(path)` → SqliteFS.readFile |
-| `write_file` | Write content to a file in the VFS | `rt.memory.write(path, content)` → SqliteFS.writeFile |
-| `execute_code` | Execute JavaScript code. On CF with LOADER: sandboxed Worker isolate. Otherwise: `new Function()` | `rt.executor.execute(code)` |
-| `save_note` | Save a note to long-term memory (MEMORY.md) with FTS5 indexing | `rt.memory.append` + `rt.memory.index` |
-| `list_tools` | List all available tools including dynamically crafted ones | `rt.craftStore.list()` |
-| `shell_exec` | POSIX shell emulator over VFS (see below) | `createShell(sqliteFS).exec(command)` |
-| `explore` | Trigger MCTS exploration on a complex subproblem via durable fiber | `runFiber` → `engine.onLifetimeEvolution` → `runMCTS` |
+| Tool | Purpose | Implementation |
+|------|---------|----------------|
+| `execute_tools` | Codemode sandbox — LLM writes JS with `workspace.*` and `tools.*` APIs | `createExecuteTool({ tools: craftedToolSet, providers, loader })` |
+| `run` | POSIX shell command with optional executor routing | `shell.exec(command)` or routed via `ExecutionRouter` |
+| `explore` | MCTS tree search for complex subproblems | `runFiber` → `engine.onLifetimeEvolution` → `runMCTS` |
+| `save_note` | Quick memory persist (FTS-indexed) | `memory.append("memory/MEMORY.md")` + `memory.index()` |
+| `search_memory` | Full-text search over long-term memory | `memory.search(query, limit)` via FTS5 BM25 |
 
-## Think Workspace Tools (auto-included)
+## execute_tools — Codemode Sandbox
 
-Think automatically adds these file manipulation tools:
+The primary tool. The LLM writes JavaScript code that runs in an isolated Worker via the `LOADER` binding (`@cloudflare/codemode`).
 
-| Tool | Description |
-|------|-------------|
-| `read` | Read file contents with line numbers |
-| `write` | Write content to a file |
-| `edit` | Targeted string replacement with fuzzy matching |
-| `list` | List directory entries |
-| `find` | Glob-based file search |
-| `grep` | Regex search across file contents |
-| `delete` | Delete a file |
+### workspace.* APIs (always available)
 
-## Shell Emulator
+| API | Signature | What it does |
+|-----|-----------|-------------|
+| `workspace.readFile` | `(path: string) → string` | Read file contents from SqliteFS |
+| `workspace.writeFile` | `(path: string, content: string) → "ok"` | Write file to SqliteFS (auto-creates parents) |
+| `workspace.readdir` | `(path: string) → string[]` | List directory entries |
+| `workspace.exists` | `(path: string) → boolean` | Check if a path exists |
+| `workspace.exec` | `(command: string) → string` | Run POSIX shell command (cat, grep, find, sed, ls, etc.) |
+| `workspace.searchMemory` | `(query: string) → results` | FTS5 search over long-term memory |
+| `workspace.saveNote` | `(content: string) → "ok"` | Append note to MEMORY.md with FTS indexing |
+| `workspace.listTools` | `() → string` | List all built-in + crafted tools |
+| `workspace.createTool` | `(name, description, code) → "ok"` | Create/update a crafted tool in CraftStore |
 
-The `shell_exec` tool provides a POSIX shell emulator that runs directly over the agent's SqliteFS. No real OS shell exists on Cloudflare Workers — this emulator fills that gap.
+These come from `InlineExecutor` in `packages/core/src/execution/inline.ts`, registered as the `workspace` provider in the `ExecutionRouter`.
 
-**Supported commands (16):**
+### tools.* APIs (dynamically learned)
 
-| Command | Flags | Example |
-|---------|-------|---------|
-| `cat` | `-n` (line numbers) | `cat -n memory/MEMORY.md` |
-| `head` | `-n N` | `head -n 20 file.txt` |
-| `tail` | `-n N` | `tail -n 10 file.txt` |
-| `ls` | `-l`, `-a`, `-R`, `-h`, `-t`, `-1` | `ls -la memory/` |
-| `tree` | `--depth N`, `--ignore` | `tree scaffold/ --depth 2` |
-| `find` | `-name`, `-type f/d`, `-maxdepth` | `find . -name "*.md" -type f` |
-| `grep` | `-r`, `-n`, `-i`, `-l`, `-c`, `-v`, `--include` | `grep -rn "TODO" . --include "*.ts"` |
-| `echo` | | `echo "hello" > file.txt` |
-| `mkdir` | `-p` (recursive) | `mkdir -p memory/logs` |
-| `touch` | | `touch newfile.txt` |
-| `rm` | `-r` | `rm -r temp/` |
-| `cp` | | `cp file.txt backup.txt` |
-| `mv` | | `mv old.txt new.txt` |
-| `sed` | `s/pat/rep/[g]`, `-i` | `sed -i 's/old/new/g' file.txt` |
-| `stat` | | `stat file.txt` |
-| `wc` | `-l`, `-w`, `-c` | `wc -l file.txt` |
+Crafted tools from the CraftStore are injected into the codemode sandbox as `tools.*`:
 
-**Pipeline support:** `grep pattern file | head -5`  
-**Redirects:** `echo hello > file.txt`, `cat a >> b`  
-**Chaining:** `cmd1 && cmd2`, `cmd1 || cmd2`, `cmd1 ; cmd2`
+```javascript
+// Inside execute_tools:
+const result = await tools.my_custom_parser({ input: "data" });
+```
 
-**Blocked commands:** Real programs (`node`, `npm`, `git`, `python`) are blocked with a message directing to `execute_code`.
+**How injection works** (orchestrator.ts `getTools()`):
+1. `craftStore.list()` reads all crafted tools from SQLite
+2. Each tool's `code` field (an async arrow function string) is wrapped via `new Function("return " + code)()`
+3. The resulting `craftedToolSet` is passed as the `tools` parameter to `createExecuteTool`
+4. Inside the codemode sandbox, the LLM can call `tools.name(args)`
 
-## Crafted Tools (Dynamic)
+### Example usage
 
-The CraftStore learns new tools from successful conversations:
+```javascript
+// Read a file, transform it, write the result
+async () => {
+  const pkg = await workspace.readFile("package.json");
+  const parsed = JSON.parse(pkg);
+  parsed.version = "2.0.0";
+  await workspace.writeFile("package.json", JSON.stringify(parsed, null, 2));
+  return `Updated version to ${parsed.version}`;
+}
+```
 
-1. Agent uses `execute_code` or other tools to solve a problem
-2. EvolutionEngine's `extractPattern()` asks the LLM to generalize the pattern
-3. LLM returns `{"name": "...", "description": "...", "params": {...}, "code": "async (args) => {...}"}`
-4. Tool stored in `crafted_tools` table with FTS5 index
-5. On next `getTools()` call, `loadCraftedTools()` wraps the stored code as a real AI SDK `tool()` object
-6. The model can now call this tool by name
+```javascript
+// Parallel file operations
+async () => {
+  const [src, tests] = await Promise.all([
+    workspace.exec("find /src -name '*.ts' | wc -l"),
+    workspace.exec("find /tests -name '*.test.ts' | wc -l"),
+  ]);
+  return { sourceFiles: src.trim(), testFiles: tests.trim() };
+}
+```
 
-Crafted tools have EMA scoring (α=0.3) with 30-day half-life time decay. Tools scoring below 0.1 are retired during periodic consolidation.
+```javascript
+// Use a crafted tool
+async () => {
+  const result = await tools.parse_csv({ input: await workspace.readFile("data.csv") });
+  await workspace.saveNote(`Parsed ${result.rows} rows from data.csv`);
+  return result;
+}
+```
 
-## Code Execution
+### Fallback (no LOADER binding)
 
-| Platform | Mechanism | Sandbox | Timeout |
-|----------|-----------|---------|---------|
-| CF Workers (with LOADER) | `createExecuteTool` from `@cloudflare/think/tools/execute` | Worker isolate — no global access | Workers CPU limit |
-| CF Workers (fallback) | `new Function('return (async () => { code })()')` | None — has access to JS globals | None |
-| CLI | Bun subprocess | Separate process | 30 seconds |
+When the `LOADER` Worker Loader binding is unavailable (local dev without `worker_loaders`), `execute_tools` is not registered. The LLM falls back to `run` for shell operations and `save_note`/`search_memory` for memory.
+
+## run — Shell Command
+
+Direct POSIX shell execution over the agent's virtual filesystem (SqliteFS).
+
+**Supported commands** (16): `cat`, `head`, `tail`, `ls`, `tree`, `find`, `grep`, `echo`, `mkdir`, `touch`, `rm`, `cp`, `mv`, `sed`, `stat`, `wc`
+
+**Features**: Pipelines (`|`), redirects (`>`, `>>`), chaining (`&&`, `||`, `;`)
+
+**Executor routing**: Pass `executor: "nimbus"` or `executor: "sandbox"` to target a remote environment. Default: `workspace` (SqliteFS).
+
+**Blocked commands**: Real programs (`node`, `npm`, `git`, `python`) are blocked with a message directing to `execute_tools`.
+
+## explore — MCTS Tree Search
+
+Triggers a Monte Carlo Tree Search for complex subproblems. Runs inside a durable fiber (`runFiber`) with checkpoint/resume via `stash`.
+
+See [MCTS.md](./MCTS.md) for the full search algorithm.
+
+## save_note / search_memory
+
+Quick memory operations that don't require the codemode sandbox:
+
+- **save_note**: Appends to `memory/MEMORY.md` with a date header, then re-indexes via FTS5
+- **search_memory**: FTS5 MATCH query with BM25 ranking, OR fallback for broad recall
+
+## CraftStore Lifecycle
+
+Crafted tools are discovered, scored, and retired automatically:
+
+1. **Extract**: `EvolutionEngine.extractPattern()` asks the LLM to generalize successful tool-call patterns
+2. **Score**: `updateCraftScores()` updates EMA scores (α=0.3) after each turn that uses crafted tools
+3. **Filter**: `loadCraftedTools()` skips tools below `minEffectiveScoreForInjection` (0.2)
+4. **Inject**: Surviving tools are passed to `createExecuteTool` as the `tools` parameter
+5. **Consolidate**: `periodicCraftConsolidation()` retires tools with `effectiveScore < 0.1`
+
+## Token Budget
+
+| Architecture | Tools | Estimated tokens |
+|-------------|-------|-----------------|
+| Old (13 tools) | read, write, edit, list, find, grep, delete, shell_exec, execute, explore, save_note, search_memory, list_tools | ~5000 |
+| **Current (5 tools)** | execute_tools, run, explore, save_note, search_memory | **~400** |
+
+12x reduction in tool schema context window usage.

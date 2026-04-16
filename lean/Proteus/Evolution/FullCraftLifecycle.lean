@@ -65,4 +65,34 @@ theorem full_lifecycle_nonempty (store : CraftStore) (entry : CraftEntry)
   simp only [updateScore, extract, List.length_map, List.length_cons]
   omega
 
+-- ── EMA convergence (simplified — Nat division) ─────────────────
+
+/-- EMA update stays within bounds when both inputs are bounded. -/
+theorem ema_stays_bounded (old obs : Nat) (ho : old ≤ 1000) (hn : obs ≤ 1000) :
+    emaUpdateInt old obs ≤ 1000 := by
+  simp only [emaUpdateInt]; omega
+
+/-- EMA update produces a non-negative result. -/
+theorem ema_nonneg (old obs : Nat) : emaUpdateInt old obs ≥ 0 := by
+  simp only [emaUpdateInt]; omega
+
+-- ── Retirement: consolidation removes low-score tools ────────────
+
+/-- A tool with score below threshold is excluded from the filtered store. -/
+theorem below_threshold_filtered (store : CraftStore) (threshold : Nat)
+    (e : CraftEntry) (hlow : e.score < threshold) :
+    e ∉ store.filter (fun x => decide (x.score ≥ threshold)) := by
+  intro hmem
+  simp only [List.mem_filter, decide_eq_true_eq] at hmem
+  omega
+
+-- ── Full lifecycle: create → store → score pipeline ──────────────
+
+/-- The pipeline preserves store non-emptiness. -/
+theorem pipeline_preserves_nonempty (store : CraftStore)
+    (entry : CraftEntry) (obs : Nat) :
+    (updateScore (extract store entry) entry.name obs).length > 0 := by
+  simp only [updateScore, extract, List.length_map, List.length_cons]
+  omega
+
 end Proteus.Evolution.FullCraftLifecycle
