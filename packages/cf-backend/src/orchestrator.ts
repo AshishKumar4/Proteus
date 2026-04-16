@@ -98,13 +98,12 @@ export class OrchestratorAgent extends Think<Env> {
     const gatewayUrl = env.AI_GATEWAY_URL;
     const gatewayAuth = env.AI_GATEWAY_AUTH;
     if (gatewayUrl && gatewayAuth) {
-      // /compat/ endpoint uses standard Authorization header + workers-ai/ model prefix
-      const compatModelId = modelId.startsWith("workers-ai/") ? modelId : `workers-ai/${modelId}`;
+      // /workers-ai/v1 endpoint — model IDs used as-is (no prefix needed)
       return createOpenAICompatible({
         name: "workers-ai",
         baseURL: gatewayUrl,
         headers: { "Authorization": gatewayAuth },
-      }).chatModel(compatModelId);
+      }).chatModel(modelId);
     }
     throw new Error("No AI model configured.");
   }
