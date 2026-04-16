@@ -34,7 +34,7 @@ export interface CompletedSession {
 
 /** Evolution event emitted during auto-evolution (for UI display) */
 export interface EvolutionEvent {
-  type: 'reflection' | 'craft_discovered' | 'scaffold_proposed' | 'consolidation' | 'mcts_started' | 'mcts_complete';
+  type: 'reflection' | 'craft_discovered' | 'scaffold_proposed' | 'consolidation' | 'mcts_started' | 'mcts_complete' | 'turn_complete';
   message: string;
   data?: unknown;
 }
