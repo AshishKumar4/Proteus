@@ -6,13 +6,17 @@
  * that bridge agent-utils types to @proteus/core's interfaces.
  */
 
-import type { AgentRuntime, CraftStore as CoreCraftStore } from '@proteus/core';
+import type { AgentRuntime, CraftStore as CoreCraftStore, Shell } from '@proteus/core';
 import type { Storage, Schedule, Memory, VFS, SqlExecutor, SqlValue, RawSqlExec } from '@proteus/core';
 import type { CraftedTool } from '@proteus/core';
-import { createVercelAILLM, type LLMProviderConfig, buildRuntime } from '@proteus/core';
+import {
+  createVercelAILLM, type LLMProviderConfig, buildRuntime,
+  DefaultExecutionRouter, createInlineExecutor,
+} from '@proteus/core';
 import { SqliteFS } from '@proteus/agent-utils';
 import { MemoryStore } from '@proteus/agent-utils';
 import { CraftStore as AgentUtilsCraftStore } from '@proteus/agent-utils';
+import { createShell } from '@proteus/agent-utils/shell';
 import { createSandboxedExecutor } from './executor.js';
 import { createLinuxFiber, initFiberTable, detectOrphanedFibers } from './fiber.js';
 import { createBranchSpawner } from './branch-process.js';
@@ -190,9 +194,18 @@ export function createCLIRuntime(
   craftStoreImpl.ensureSchema();
   const craftStore = adaptCraftStore(craftStoreImpl);
 
+  // v2.0: shell + executionRouter so the canonical `run` tool in core has a
+  // workspace provider and a bound POSIX shell. Same set the CF backend
+  // exposes — CLI only registers the inline executor (no Nimbus/Container/SSH
+  // bindings are relevant in a local Bun process).
+  const shell: Shell = createShell(sqliteFs);
+  const executionRouter = new DefaultExecutionRouter();
+  executionRouter.register(createInlineExecutor({ vfs, memory, craftStore, shell }));
+
   return buildRuntime({
     sql, execRaw, vfs, llm, executor: createSandboxedExecutor(), schedule,
     agentId, agentName, memory, craftStore, judgeModel,
     spawnBranch: spawn, abortBranch: abort,
+    executionRouter, shell,
   });
 }

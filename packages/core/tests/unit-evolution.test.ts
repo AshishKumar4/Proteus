@@ -80,7 +80,7 @@ describe('EvolutionEngine — Turn-level', () => {
       feedback: 'positive',
       toolCalls: [
         { name: 'search_memory', args: { query: 'test' }, result: [] },
-        { name: 'execute_code', args: { code: 'return 42' }, result: 42 },
+        { name: 'execute_tools', args: { code: 'return 42' }, result: 42 },
       ],
     }));
 

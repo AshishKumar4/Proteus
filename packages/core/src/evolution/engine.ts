@@ -341,11 +341,11 @@ export class EvolutionEngine {
     );
   }
 
-  /** Extract a successful tool usage pattern into a reusable crafted tool */
+  /** Extract a successful tool usage pattern into a reusable crafted tool.
+   *  search_memory is skipped because it's a pure lookup; no pattern to extract.
+   */
   private async extractPattern(turn: CompletedTurn, quality: number = 0.7): Promise<void> {
-    const meaningfulCalls = turn.toolCalls.filter(tc =>
-      tc.name !== 'search_memory' && tc.name !== 'list_tools',
-    );
+    const meaningfulCalls = turn.toolCalls.filter(tc => tc.name !== 'search_memory');
     if (meaningfulCalls.length === 0) return;
 
     const callSummary = meaningfulCalls
