@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { InputArea, Loader } from "@cloudflare/kumo";
 import { BrainIcon, ClockIcon, PlusIcon, TrashIcon, PaperPlaneRightIcon } from "@phosphor-icons/react";
-import { useHomeConnection } from "@/hooks/use-proteus";
 import { getKnownAgents, registerAgent, removeAgent, type AgentEntry } from "@/lib/agent-registry";
 
 function AgentCard({ entry, onClick, onDelete }: {
@@ -31,7 +30,6 @@ function AgentCard({ entry, onClick, onDelete }: {
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const conn = useHomeConnection();
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [creating, setCreating] = useState(false);
   const [input, setInput] = useState("");

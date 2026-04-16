@@ -9,8 +9,8 @@ import {
   FingerprintIcon, PackageIcon, DatabaseIcon, TreeStructureIcon,
   ClockIcon, WifiSlashIcon, ArrowsClockwiseIcon, BrainIcon,
   FolderOpenIcon, GitBranchIcon, CheckCircleIcon, TrashIcon,
-  ChatTextIcon, CopyIcon, TerminalIcon, GearIcon, ArrowSquareOutIcon,
-  GearSixIcon, TimerIcon, FunnelIcon,
+  CopyIcon, TerminalIcon, GearIcon, ArrowSquareOutIcon,
+  GearSixIcon, TimerIcon,
 } from "@phosphor-icons/react";
 import { ScoreBar } from "@/components/ui/score-bar";
 import { isToolUIPart, getToolName } from "ai";
