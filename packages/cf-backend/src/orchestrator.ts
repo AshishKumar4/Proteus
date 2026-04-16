@@ -57,6 +57,10 @@ export class OrchestratorAgent extends Think<Env> {
   private _sessionTurns: CompletedTurn[] = [];
   private _sessionStartedAt = Date.now();
 
+  // ── Tool cache: avoid rebuilding 5-tool ToolSet + codemode types every turn ──
+  private _cachedTools: ToolSet | null = null;
+  private _cachedToolsKey: string = "";
+
   private get rt(): AgentRuntime {
     if (!this._rt) this._rt = createCFRuntime(this);
     return this._rt;
@@ -107,15 +111,19 @@ export class OrchestratorAgent extends Think<Env> {
   // ── Think lifecycle overrides ──────────────────────────────────
 
   getModel(): LanguageModel {
-    return this.createModel(this.getStoredModelId());
+    const t0 = performance.now();
+    const model = this.createModel(this.getStoredModelId());
+    console.log(`[proteus] getModel: ${(performance.now() - t0).toFixed(1)}ms`);
+    return model;
   }
 
   getSystemPrompt(): string {
+    const t0 = performance.now();
     try {
       const rows = this.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`;
       const purpose = rows[0]?.purpose ?? "You are a helpful coding assistant.";
 
-      return `${purpose}
+      const prompt = `${purpose}
 
 ## Tools (5 tools)
 
@@ -155,31 +163,61 @@ Full-text search over long-term memory. Quick recall — no code needed.
 ## Evolution
 Your capabilities improve automatically via CraftStore — good patterns become tools.* APIs inside execute_tools.
 Summarize what you did after using tools.`;
+      console.log(`[proteus] getSystemPrompt: ${(performance.now() - t0).toFixed(1)}ms`);
+      return prompt;
     } catch {
+      console.log(`[proteus] getSystemPrompt (fallback): ${(performance.now() - t0).toFixed(1)}ms`);
       return "You are a helpful coding assistant.";
     }
   }
 
+  /**
+   * Compute a lightweight cache key from CraftStore state.
+   * Uses count + max(updated_at) — two fast indexed queries on SQLite.
+   * Returns "" if CraftStore is unavailable.
+   */
+  private _craftCacheKey(): string {
+    try {
+      const rows = this.sql<{ cnt: number; latest: number }>`
+        SELECT COUNT(*) as cnt, COALESCE(MAX(updated_at), 0) as latest FROM crafted_tools`;
+      const { cnt, latest } = rows[0] ?? { cnt: 0, latest: 0 };
+      return `${cnt}:${latest}`;
+    } catch { return ""; }
+  }
+
   getTools(): ToolSet {
-    console.log("[proteus] getTools() called");
+    const t0 = performance.now();
+
+    // Fast path: return cached tools if CraftStore hasn't changed
+    const cacheKey = this._craftCacheKey();
+    if (this._cachedTools && cacheKey === this._cachedToolsKey) {
+      console.log(`[proteus] getTools() cache HIT (${(performance.now() - t0).toFixed(1)}ms)`);
+      return this._cachedTools;
+    }
+    console.log(`[proteus] getTools() cache MISS — rebuilding (key: ${this._cachedToolsKey} → ${cacheKey})`);
+
     try {
     const orchestrator = this;
     const env = this.env as Env & Record<string, unknown>;
     const tools: ToolSet = {};
 
+    const t1 = performance.now();
     const router = this.rt.executionRouter;
     const memory = this.rt.memory;
     const craftStore = this.rt.craftStore;
     const shell = createShell(this.rt.sqliteFS);
+    console.log(`[proteus] getTools() runtime access: ${(performance.now() - t1).toFixed(1)}ms`);
 
     // ── 1. execute_tools: codemode sandbox with workspace.* + tools.* ──
     if (env.LOADER) {
       try {
+        const t2 = performance.now();
         const providers = router?.getProviders() ?? [];
-        console.log(`[proteus] execute_tools: ${providers.length} providers: ${providers.map(p => p.name).join(", ")}`);
+        console.log(`[proteus] getTools() getProviders: ${(performance.now() - t2).toFixed(1)}ms (${providers.length} providers: ${providers.map(p => p.name).join(", ")})`);
 
         // Inject crafted tools so they're callable as tools.* inside codemode
         const craftedToolSet: Record<string, { description: string; execute: Function }> = {};
+        const t3 = performance.now();
         try {
           const crafted = craftStore.list();
           for (const t of crafted) {
@@ -193,24 +231,22 @@ Summarize what you did after using tools.`;
               console.warn(`[proteus] Skipping broken crafted tool "${t.name}":`, (e as Error).message);
             }
           }
-          if (Object.keys(craftedToolSet).length > 0) {
-            console.log(`[proteus] Injecting ${Object.keys(craftedToolSet).length} crafted tools: ${Object.keys(craftedToolSet).join(", ")}`);
-          }
         } catch { /* CraftStore may not be initialized yet */ }
+        console.log(`[proteus] getTools() craft eval: ${(performance.now() - t3).toFixed(1)}ms (${Object.keys(craftedToolSet).length} tools)`);
 
+        const t4 = performance.now();
         tools.execute_tools = createExecuteTool({
           tools: craftedToolSet,
           providers,
           loader: env.LOADER as WorkerLoader,
         });
-        console.log("[proteus] execute_tools registered successfully");
+        console.log(`[proteus] getTools() createExecuteTool: ${(performance.now() - t4).toFixed(1)}ms`);
       } catch (err) {
         console.error("[proteus] createExecuteTool FAILED:", (err as Error).message, (err as Error).stack);
       }
     } else {
-      console.warn("[proteus] LOADER binding unavailable — execute_tools will not be registered. " +
-        "Configure worker_loaders in wrangler.jsonc for sandboxed code execution.");
       // Fallback: register a basic execute_tools that uses new Function()
+      const vfs = this.rt.storage.vfs;
       tools.execute_tools = tool({
         description: "Execute JavaScript code. Available APIs: workspace.readFile(path), workspace.writeFile(path, content), workspace.exec(command), workspace.searchMemory(query), workspace.saveNote(content). (Running in unsandboxed fallback mode.)",
         inputSchema: jsonSchema<{ code: string }>({
@@ -220,7 +256,6 @@ Summarize what you did after using tools.`;
         }),
         execute: async (args: { code: string }) => {
           try {
-            // Wrap workspace APIs as closures accessible from the code
             const workspaceApi = {
               readFile: async (path: string) => {
                 const content = await vfs.readFile(path, { encoding: "utf8" });
@@ -256,7 +291,6 @@ Summarize what you did after using tools.`;
           }
         },
       });
-      console.log("[proteus] execute_tools registered with new Function() fallback");
     }
 
     // ── 2. run: shell command with optional executor routing ──
@@ -312,7 +346,6 @@ Summarize what you did after using tools.`;
             console.log("[proteus] explore: onLifetimeEvolution completed");
             orchestrator.broadcastMctsProgress("explore-completed");
             ctx.stash({ task: args.task, phase: "completed" });
-            // Check ALL nodes, not just terminal (MCTS may not mark any terminal)
             const allNodes = orchestrator.sql<{ id: string; action: string; value: number; status: string }>`
               SELECT id, action, value, status FROM search_nodes ORDER BY value DESC`;
             console.log(`[proteus] explore: ${allNodes.length} search nodes found`);
@@ -360,7 +393,10 @@ Summarize what you did after using tools.`;
       },
     });
 
-    console.log(`[proteus] getTools() returning 5 tools: ${Object.keys(tools).join(", ")}`);
+    // Cache the result for subsequent turns
+    this._cachedTools = tools;
+    this._cachedToolsKey = cacheKey;
+    console.log(`[proteus] getTools() total rebuild: ${(performance.now() - t0).toFixed(1)}ms — 5 tools: ${Object.keys(tools).join(", ")}`);
     return tools;
     } catch (err) {
       console.error("[proteus] getTools() FAILED:", err);
@@ -382,11 +418,12 @@ Summarize what you did after using tools.`;
   // ── Think lifecycle hooks ──────────────────────────────────────
 
   beforeTurn(_ctx: TurnContext): TurnConfig | void {
+    const t0 = performance.now();
     this._turnToolCalls = [];
     this._turnStepCount = 0;
     this._turnStartedAt = Date.now();
     this._turnHadError = false;
-    console.log("[proteus] beforeTurn fired");
+    console.log(`[proteus] beforeTurn: ${(performance.now() - t0).toFixed(1)}ms`);
   }
 
   afterToolCall(ctx: ToolCallResultContext): void {
