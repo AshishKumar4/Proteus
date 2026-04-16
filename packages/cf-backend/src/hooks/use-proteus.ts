@@ -115,7 +115,7 @@ export function useProteus(agentId?: string) {
     return () => clearInterval(interval);
   }, [isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for MCTS progress broadcasts from the server
+  // Listen for server broadcasts: MCTS progress + activity-log events
   useEffect(() => {
     if (!isConnected) return;
     const handler = (event: MessageEvent) => {
@@ -126,14 +126,19 @@ export function useProteus(agentId?: string) {
           if (msg.nodes && msg.nodes.length > 0) {
             setMctsTree(buildTree(msg.nodes));
           }
-          // Also refresh evolution events on MCTS progress
           agent.call("getEvolutionEvents", [200])
             .then(events => setEvolutionEvents((events as EvolutionEventRow[]).reverse()))
             .catch(() => {});
         }
+        if (msg.type === "activity-log") {
+          const ms = msg.elapsed as number;
+          // Classify by latency: info <1s, tool 1-5s, error >5s
+          const type: LogEntry["type"] = ms > 5000 ? "error" : ms > 1000 ? "tool" : "info";
+          const detail = msg.detail ? String(msg.detail) : undefined;
+          addLog(type, `[${ms}ms] ${msg.event}`, detail);
+        }
       } catch { /* not JSON or not our message */ }
     };
-    // The agent's underlying WebSocket fires "message" events
     const ws = (agent as unknown as { _ws?: WebSocket })._ws;
     ws?.addEventListener("message", handler);
     return () => ws?.removeEventListener("message", handler);
