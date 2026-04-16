@@ -677,7 +677,7 @@ When both the agent VFS and the executor have modified the same file:
 
 Formal proofs for the execution layer live in two files under `lean/Proteus/Execution/`:
 
-### `Capabilities.lean` (9 theorems)
+### `Capabilities.lean` (10 theorems)
 
 - `ExecutorCapability` — inductive type with 16 variants matching the TypeScript union
 - `ExecutorKind` — `workspace | nimbus | container | ssh`
@@ -691,7 +691,7 @@ Formal proofs for the execution layer live in two files under `lean/Proteus/Exec
 - `route_has_all_caps` — Selected executor has all required capabilities
 - `subsumes_refl` / `subsumes_trans` — Reflexivity and transitivity
 
-### `ToolSystem.lean` (7 theorems)
+### `ToolSystem.lean` (8 theorems)
 
 Models the 5-tool architecture (execute_tools, run, explore, save_note, search_memory):
 

@@ -1,11 +1,10 @@
 # Formal Specification
 
-Proteus has two Lean 4 formal specification projects:
-
-- **`lean/`** — the current specification: 16 modules, 0 sorry, ~60 theorems across 5 categories. Uses `lakefile.lean` and `leanprover/lean4:v4.16.0`.
-- **`formal-spec/`** — the legacy specification: 12 modules, has sorry placeholders. Uses `lakefile.toml` and `leanprover/lean4:v4.29.0`.
-
-This document describes the current `lean/` project.
+Proteus ships a single Lean 4 formal specification project at `lean/`:
+16 modules, 75 theorems/lemmas across 6 categories (Safety, MCTS, Evolution,
+Agent, Storage, Execution). Uses `lakefile.lean` and
+`leanprover/lean4:v4.16.0`. 8 theorems currently use `sorry` placeholders
+(informational: tracked for closure, not blocking build).
 
 ## Module Structure
 
@@ -15,8 +14,8 @@ lean/
   Proteus/
     Types.lean                        Domain types (NodeData, Op, CraftedTool, etc.)
     Safety/
-      FloatAxioms.lean                16 IEEE 754 axioms
-      CapabilitySafety.lean           Sandbox capability bounds (7 theorems)
+      FloatAxioms.lean                IEEE 754 axioms (no theorems, axioms only)
+      CapabilitySafety.lean           Sandbox capability bounds (6 theorems)
     MCTS/
       StorageIsolation.lean           Storage isolation invariant + budget (3 theorems)
       Backpropagation.lean            Running mean correctness (3 theorems)
@@ -24,24 +23,24 @@ lean/
       Timescales.lean                 3-timescale monotonicity (6 theorems)
       CraftStore.lean                 EMA + consolidation (2 theorems)
       Scaffold.lean                   Version rollback + append (2 theorems)
-      FullCraftLifecycle.lean         End-to-end craft lifecycle (9 theorems)
+      FullCraftLifecycle.lean         End-to-end craft lifecycle (12 theorems)
     Agent/
       Lifecycle.lean                  Turn/step/tool counters (7 theorems)
-      FiberDurability.lean            Fiber budget conservation (4 theorems)
+      FiberDurability.lean            Fiber budget conservation (5 theorems)
       TurnQueue.lean                  Queue serialization (6 theorems)
     Storage/
       FTS5Search.lean                 FTS5 indexing + bounded search (3 theorems + 2 axioms)
       SqliteFSCorrectness.lean        Write/read round-trip (2 theorems + 2 axioms)
     Execution/
-      Capabilities.lean               Executor subsumption + routing (9 theorems)
-      ToolSystem.lean                 5-tool architecture model (7 theorems)
+      Capabilities.lean               Executor subsumption + routing (10 theorems)
+      ToolSystem.lean                 5-tool architecture model (8 theorems)
   lakefile.lean                       Lean build config
   lean-toolchain                      leanprover/lean4:v4.16.0
 ```
 
 ## Proven Properties
 
-### Safety — `Safety/CapabilitySafety.lean` (7 theorems)
+### Safety — `Safety/CapabilitySafety.lean` (6 theorems)
 
 Proves that the code execution sandbox can ONLY invoke `ToolCall` operations:
 
@@ -95,7 +94,7 @@ StorageIsolated(s) ≡ ∀ b ∈ s.branches, b.storageId ≠ s.orch.storageId
 | `consolidate_keeps_above` | After consolidation, remaining tools score ≥ threshold |
 | `search_length_bound` | Search results length ≤ limit |
 
-### Full Craft Lifecycle — `Evolution/FullCraftLifecycle.lean` (9 theorems)
+### Full Craft Lifecycle — `Evolution/FullCraftLifecycle.lean` (12 theorems)
 
 End-to-end proofs for the complete tool lifecycle (extract → score → consolidate → retire):
 
@@ -130,7 +129,7 @@ End-to-end proofs for the complete tool lifecycle (extract → score → consoli
 | `steps_bounded_by_calls` | Step count ≤ total operations |
 | `maxSteps_invariant` | Step count never exceeds maxSteps |
 
-### Fiber Durability — `Agent/FiberDurability.lean` (4 theorems)
+### Fiber Durability — `Agent/FiberDurability.lean` (5 theorems)
 
 | Theorem | What it proves |
 |---------|----------------|
@@ -169,7 +168,7 @@ End-to-end proofs for the complete tool lifecycle (extract → score → consoli
 | `chunk_reassembly` (axiom) | Chunked data reassembles correctly |
 | `writes_commute` (axiom) | Non-overlapping writes commute |
 
-### Execution — `Execution/Capabilities.lean` (9 theorems)
+### Execution — `Execution/Capabilities.lean` (10 theorems)
 
 | Theorem | What it proves |
 |---------|----------------|
@@ -183,7 +182,7 @@ End-to-end proofs for the complete tool lifecycle (extract → score → consoli
 | `route_has_all_caps` | Selected executor has all required capabilities |
 | `subsumes_refl` | Subsumption is reflexive |
 
-### Execution — `Execution/ToolSystem.lean` (7 theorems)
+### Execution — `Execution/ToolSystem.lean` (8 theorems)
 
 Models the 5-tool architecture:
 
