@@ -20,7 +20,8 @@ import type {
   CraftStore as CoreCraftStore, CraftedTool as CoreCraftedTool,
   FiberCtx, ExecutionRouter,
 } from "@proteus/core";
-import { DefaultExecutionRouter, createInlineExecutor } from "@proteus/core";
+import { DefaultExecutionRouter, createInlineExecutor, createNimbusExecutor } from "@proteus/core";
+import type { NimbusStub } from "@proteus/core";
 import { SqliteFS } from "@proteus/agent-utils/vfs";
 import { MemoryStore } from "@proteus/agent-utils/memory";
 import { CraftStore as AgentUtilsCraftStore } from "@proteus/agent-utils/stores";
@@ -74,7 +75,19 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
   executionRouter.register(createInlineExecutor({
     vfs, memory, craftStore, shell,
   }));
-  // nimbus/sandbox/laptop registered when bindings become available (see orchestrator)
+  // Register Nimbus executor if the NimbusSession DO binding is available
+  const env = agent.env as Env & Record<string, unknown>;
+  if (env.NIMBUS_SESSION) {
+    try {
+      const nimbusNs = env.NIMBUS_SESSION as { idFromName(name: string): { toString(): string }; get(id: unknown): NimbusStub };
+      const nimbusId = nimbusNs.idFromName(agent.name);
+      const nimbusStub = nimbusNs.get(nimbusId);
+      executionRouter.register(createNimbusExecutor(nimbusStub));
+    } catch (err) {
+      console.warn("[proteus] Failed to register NimbusExecutor:", (err as Error).message);
+    }
+  }
+  // sandbox/laptop registered when bindings become available
 
   return {
     storage: { vfs, sql: sql as unknown as CoreSqlExecutor, execRaw },

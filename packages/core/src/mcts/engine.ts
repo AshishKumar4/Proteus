@@ -57,6 +57,7 @@ export async function runMCTS(
     task,
     action: '',
     observation: task,
+    codeUsed: null,
     depth: 0,
   });
 
@@ -104,6 +105,7 @@ export async function runMCTS(
           task,
           action: exploration.text.slice(0, 300),
           observation: exploration.text,
+          codeUsed: exploration.codeUsed ?? null,
           depth: selected.depth + 1,
         });
         rt.storage.sql`

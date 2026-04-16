@@ -70,7 +70,7 @@ export { checkConflictsBeforeAdding, upsertCraftedTool } from './craft/conflict.
 export {
   DefaultExecutionRouter,
   createInlineExecutor,
-  createNimbusExecutor,
+  createNimbusExecutor, type NimbusStub,
   createContainerExecutor,
   createSSHTunnelExecutor,
   type ExecutorCapability, type ExecutorKind, type ExecutorProvider,
