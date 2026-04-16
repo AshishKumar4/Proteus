@@ -31,8 +31,21 @@ export type * from './types/evaluation.js';
 export { runChat, type ChatEvent, type ChatOptions } from './chat.js';
 
 // LLM (Vercel AI SDK wrapper — shared across backends)
-export { createVercelAILLM, collectStepText } from './llm.js';
-export type { LLMProviderConfig } from './llm.js';
+export { createVercelAILLM, collectStepText, createChatModel } from './llm.js';
+export type { LLMProviderConfig, ChatModelConfig } from './llm.js';
+
+// Canonical tool registry + factories (v2.0 — shared across CF and CLI)
+export {
+  BUILTIN_TOOLS,
+  SESSION_TOOLS,
+  ACTIVE_TOOLS,
+  BUILTIN_TOOL_NAMES,
+  BUILTIN_TOOL_DESCRIPTIONS,
+  type BuiltinToolName,
+} from './tools/registry.js';
+export { loadFilteredCraftedTools, type CraftedToolsOptions, type CraftedToolHandle } from './tools/crafted.js';
+export { buildBuiltinTools, type BuiltinToolDeps } from './tools/builtins.js';
+export { buildSystemPrompt, type SystemPromptOptions } from './prompt.js';
 
 // Runtime builder (shared across backends)
 export { buildRuntime } from './runtime-builder.js';

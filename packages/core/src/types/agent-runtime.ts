@@ -12,6 +12,7 @@ import type {
   LLM,
   Schedule,
   Identity,
+  Shell,
 } from './primitives.js';
 import type { CraftedTool, CraftScoreEntry } from './craft.js';
 import type { ExecutionRouter } from '../execution/types.js';
@@ -60,4 +61,11 @@ export interface AgentRuntime {
    * code that doesn't need multi-executor support ignores this field.
    */
   executionRouter?: ExecutionRouter;
+  /**
+   * POSIX shell bound to the agent's VFS. Supplied by the backend adapter
+   * (CF: createShell(sqliteFS); CLI: createShell(sqliteFS)). The `run` tool
+   * reads this directly for workspace-scoped commands; absence degrades to
+   * router-only routing.
+   */
+  shell?: Shell;
 }
