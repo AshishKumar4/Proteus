@@ -294,9 +294,24 @@ export class OrchestratorAgent extends Think<Env> {
     });
   }
 
-  onStepFinish(_ctx: StepContext): void {
+  onStepFinish(ctx: StepContext): void {
     this._turnStepCount++;
-    this.logActivity("step_finish", `step ${this._turnStepCount}`);
+    const toolCallNames = Array.isArray(ctx.toolCalls)
+      ? (ctx.toolCalls as Array<{ toolName?: string; name?: string }>)
+          .map(tc => tc?.toolName ?? tc?.name ?? "?")
+          .join(",")
+      : "";
+    const toolCallCount = Array.isArray(ctx.toolCalls) ? ctx.toolCalls.length : 0;
+    const toolResultCount = Array.isArray(ctx.toolResults) ? ctx.toolResults.length : 0;
+    const textLen = (ctx.text ?? "").length;
+    const inTok = ctx.usage?.inputTokens ?? 0;
+    const outTok = ctx.usage?.outputTokens ?? 0;
+    this.logActivity(
+      "step_finish",
+      `step ${this._turnStepCount} stepType=${ctx.stepType} reason=${ctx.finishReason} ` +
+      `textLen=${textLen} tools=${toolCallCount}[${toolCallNames}] results=${toolResultCount} ` +
+      `in=${inTok} out=${outTok}`,
+    );
   }
 
   async onChatResponse(result: ChatResponseResult) {
