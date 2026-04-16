@@ -391,12 +391,26 @@ function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
   onExecute: (id: string, cmd: string) => Promise<unknown>;
   onBrowse: (id: string, path: string) => Promise<unknown>;
 }) {
-  const [activeExec, setActiveExec] = useState(executors[0]?.name ?? "workspace");
+  // Only render tabs for executors that are actually connected and usable.
+  // Unavailable executors (e.g. sandbox/laptop without a CONTAINER/SSH binding)
+  // are listed in a footer so users know the capability exists but needs wiring.
+  const availableExecutors = executors.filter(e => e.available);
+  const unavailableExecutors = executors.filter(e => !e.available);
+
+  const [activeExec, setActiveExec] = useState(availableExecutors[0]?.name ?? "workspace");
   const [cmdInput, setCmdInput] = useState("");
   const [running, setRunning] = useState(false);
   const [fileEntries, setFileEntries] = useState<string[]>([]);
   const [filePath, setFilePath] = useState("/");
   const termEndRef = useRef<HTMLDivElement>(null);
+
+  // If the active executor becomes unavailable (e.g. connection drops), fall
+  // back to the first available one.
+  useEffect(() => {
+    if (availableExecutors.length > 0 && !availableExecutors.some(e => e.name === activeExec)) {
+      setActiveExec(availableExecutors[0]!.name);
+    }
+  }, [availableExecutors, activeExec]);
 
   useEffect(() => { termEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [outputs, activeExec]);
 
@@ -426,19 +440,19 @@ function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
 
   return (
     <div className="animate-fade-in h-full flex flex-col gap-3">
-      {/* Executor tabs */}
+      {/* Executor tabs — only show available ones */}
       <div className="flex items-center gap-1 flex-wrap">
-        {executors.map(exec => (
+        {availableExecutors.map(exec => (
           <button key={exec.name} onClick={() => setActiveExec(exec.name)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               activeExec === exec.name ? "p-elevated p-text" : "p-text-2 hover:p-elevated/50"
             }`}
           >
-            <span className={`size-1.5 rounded-full ${exec.available ? "bg-green-500" : "bg-zinc-500"}`} />
+            <span className="size-1.5 rounded-full bg-green-500" />
             {exec.name}
           </button>
         ))}
-        {executors.length === 0 && <span className="text-xs p-text-3">No executors registered</span>}
+        {availableExecutors.length === 0 && <span className="text-xs p-text-3">No executors available</span>}
       </div>
 
       {/* Terminal + Files split */}
@@ -512,6 +526,22 @@ function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
           </div>
         </div>
       </div>
+
+      {/* Unavailable executors — listed in a muted footer so users see what's configurable */}
+      {unavailableExecutors.length > 0 && (
+        <div className="border-t p-border pt-2 text-[11px] p-text-3 flex items-center gap-2 flex-wrap">
+          <span>Not configured:</span>
+          {unavailableExecutors.map(exec => (
+            <span key={exec.name} className="flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-zinc-500" />
+              <span className="font-mono">{exec.name}</span>
+            </span>
+          ))}
+          <span className="ml-auto text-[10px] p-text-3/80">
+            Add bindings in wrangler.jsonc to enable
+          </span>
+        </div>
+      )}
     </div>
   );
 }
