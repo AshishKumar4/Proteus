@@ -7,11 +7,12 @@ All state is stored in a single Durable Object's SQLite database. The schema is 
 ```mermaid
 erDiagram
     agent_soul {
-        TEXT purpose PK "Immutable agent purpose"
+        TEXT purpose "Immutable agent purpose (NOT NULL)"
+        INTEGER created_at "Epoch ms"
     }
     agent_identity {
-        TEXT id PK "Stable UUID"
-        TEXT name "Agent name"
+        TEXT id "Stable UUID (NOT NULL)"
+        TEXT name "Agent name (NOT NULL)"
         INTEGER created_at "Epoch ms"
     }
     agent_config {
@@ -58,11 +59,13 @@ erDiagram
         TEXT task "MCTS task"
         TEXT action "Approach taken"
         TEXT observation "Result"
+        TEXT code_used "Code from exploration"
         INTEGER depth "Tree depth"
-        INTEGER visits "Backprop count"
-        REAL value "Running mean score"
+        INTEGER visits "Backprop count (default 0)"
+        REAL value "Running mean score (default 0)"
         TEXT status "open/terminal/pruned/failed"
         TEXT msg_id "Session message ID"
+        TEXT branch_agent_key "Facet agent key"
         INTEGER created_at "Epoch ms"
     }
     evolution_events {
@@ -76,13 +79,66 @@ erDiagram
         INTEGER version PK "Version number"
         INTEGER written_at "Epoch ms"
         TEXT rationale "Why it was changed"
+        REAL canary_score "Canary evaluation score"
+        REAL baseline_score "Baseline comparison score"
+    }
+    craft_scores {
+        TEXT tool_name PK "Crafted tool name"
+        REAL score "EMA score (default 0.5)"
+        INTEGER uses "Usage count (default 0)"
+        INTEGER last_used_at "Epoch ms"
+        INTEGER created_at "Epoch ms"
+    }
+    scaffold_regression_fixtures {
+        TEXT id PK "Random hex ID"
+        TEXT task "Regression test task"
+        TEXT expected_keywords "Expected output keywords"
+        INTEGER created_at "Epoch ms"
+    }
+    task_history {
+        TEXT id PK "Random hex ID"
+        TEXT task "Task description"
+        INTEGER scaffold_version "Version used (default 0)"
+        TEXT outcome "success/error/timeout"
+        REAL score "Task score"
+        INTEGER created_at "Epoch ms"
     }
     fibers {
-        TEXT name PK "Fiber name"
-        TEXT state "running/completed/failed"
+        TEXT id PK "Fiber ID"
+        TEXT name "Fiber name (NOT NULL)"
         TEXT snapshot "JSON checkpoint"
-        INTEGER started_at "Epoch ms"
-        INTEGER updated_at "Epoch ms"
+        INTEGER created_at "Epoch ms"
+    }
+    messages {
+        TEXT id PK "Message ID"
+        TEXT session_id "Session (default 'default')"
+        TEXT parent_id "Parent message ID"
+        TEXT role "user/assistant/system"
+        TEXT content "Message content"
+        INTEGER created_at "Epoch ms"
+    }
+    conversation_history {
+        INTEGER id PK "Auto-increment ID"
+        TEXT session_id "Session (default 'default')"
+        TEXT role "Message role"
+        TEXT message "JSON-encoded message"
+        INTEGER created_at "Epoch ms"
+    }
+    executor_output {
+        TEXT id PK "Random hex ID"
+        TEXT executor "Executor name"
+        TEXT command "Command run"
+        TEXT stdout "Standard output"
+        TEXT stderr "Standard error"
+        INTEGER exit_code "Exit code"
+        INTEGER created_at "Epoch ms"
+    }
+    activity_log {
+        TEXT id PK "Random hex ID"
+        TEXT event "Event type"
+        TEXT detail "Event details"
+        INTEGER elapsed_ms "Duration (default 0)"
+        INTEGER created_at "Epoch ms"
     }
 
     agent_identity ||--|| agent_soul : "has"
@@ -107,7 +163,7 @@ From `@proteus/agent-utils`. Provides a POSIX-like filesystem backed by a single
 - `writeFile(path, data)` — delete old chunks, split data into 1.8MB chunks, insert
 - `stat(path)` — return size, mtime, isDir
 - `mkdir(path, {recursive: true})` — create intermediate directories
-- `rename(old, new)` — atomic rename via SQL UPDATE
+- `rename(old, new)` — rename via copy-delete pattern (DELETE old + INSERT new)
 
 ## MemoryStore (FTS5 Search)
 
@@ -115,7 +171,7 @@ From `@proteus/agent-utils`. Provides full-text search over markdown files store
 
 **Schema:** `memory_chunks` table with `memory_chunks_fts` FTS5 virtual table (content-sync via `content='memory_chunks'`).
 
-**Indexing:** Files are chunked using a line-aware sliding window (target 500 chars, 320 char overlap). Each chunk gets a SHA-256 hash for deduplication — unchanged chunks are not re-indexed.
+**Indexing:** Files are chunked using a line-aware sliding window (target 1600 chars, 320 char overlap). Each chunk gets a SHA-256 hash for deduplication — unchanged chunks are not re-indexed.
 
 **Search:** FTS5 MATCH with BM25 ranking. Query sanitization removes FTS5 operators and stop words. Falls back to OR-joined tokens if AND query returns no results.
 
@@ -130,13 +186,13 @@ These are managed by Think internally — Proteus reads via `this.messages` but 
 
 ## Schema Initialization
 
-Tables are created in `onStart()`:
-1. `initAllTables(execRaw)` — core tables (agent_soul, agent_identity, vfs_files, scaffold_versions, evolution_events, crafted_tools, fibers)
-2. `initSearchTables(execRaw)` — search_nodes
-3. `initScaffoldTables(execRaw)` — scaffold_versions
-4. `initCraftScoreTables(execRaw)` — craft_scores
-5. `sqliteFS.init()` — ensures vfs_files has correct chunked schema
-6. `memoryStore.ensureSchema()` — creates memory_chunks + FTS5 virtual table
-7. `craftStore.ensureSchema()` — creates crafted_tools FTS5 + auto-sync triggers
-
-**Migration:** `onStart()` detects old schemas (missing `chunk_index` in vfs_files, missing `start_line` in memory_chunks) and drops/recreates them.
+Tables are created in `onStart()` (`orchestrator.ts:538-592`):
+1. Migration checks — detect old schemas (missing `chunk_index` in vfs_files, missing `start_line` in memory_chunks) and drop/recreate
+2. `initAllTables(execRaw)` — 14 core tables (agent_soul, agent_identity, search_nodes, scaffold_versions, scaffold_regression_fixtures, task_history, craft_scores, fibers, vfs_files, messages, conversation_history, evolution_events, crafted_tools, executor_output, activity_log)
+3. `initSearchTables(execRaw)` — search_nodes (idempotent, already in initAllTables)
+4. `initScaffoldTables(execRaw)` — scaffold_versions, regression_fixtures, task_history
+5. `initCraftScoreTables(execRaw)` — craft_scores
+6. Inline `CREATE TABLE IF NOT EXISTS agent_config(key TEXT PRIMARY KEY, value TEXT)`
+7. `sqliteFS.init()` — ensures vfs_files has correct chunked schema
+8. `memoryStore.ensureSchema()` — creates memory_chunks + FTS5 virtual table
+9. `craftStore.ensureSchema()` — creates crafted_tools FTS5 + auto-sync triggers

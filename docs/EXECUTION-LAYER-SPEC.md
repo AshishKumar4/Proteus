@@ -1,7 +1,13 @@
 # Execution Layer Architecture Specification
 
-> Version 1.0 — April 2026
+> Version 1.1 — April 2026
 > Design principle: **Persistence is immortal. Execution is ephemeral.**
+>
+> **Note:** This document contains both the implemented interfaces (§2, §3) and
+> aspirational design patterns (§5-§9). The actual code in `packages/core/src/execution/`
+> uses the tools-record `ExecutorProvider` pattern, not the monolithic `ExecutionLayer`
+> interface originally proposed. Sections marked **(Implemented)** match the code;
+> sections marked **(Design)** describe future plans.
 
 ---
 
@@ -113,24 +119,27 @@ type ExecutorCapability =
   | "gpu";               // GPU access for ML workloads
 ```
 
-### 2.2 ExecutionLayer Interface
+### 2.2 ExecutorProvider Interface **(Implemented)**
+
+The actual contract every executor must satisfy. Unlike the monolithic `ExecutionLayer` originally proposed, the implemented design uses a **tools-record pattern** where each operation is a named tool with a description and execute function:
 
 ```typescript
-/**
- * The contract every executor must satisfy. The router holds multiple
- * ExecutionLayer instances and routes commands based on capability matching.
- */
-interface ExecutionLayer {
-  /** Stable identifier for this executor instance */
-  readonly id: string;
+// From packages/core/src/execution/types.ts
+
+type ExecutorKind = 'workspace' | 'nimbus' | 'sandbox' | 'laptop';
+
+interface ExecutorProvider {
+  /** Stable name for this provider (e.g., "workspace", "nimbus") */
+  readonly name: string;
 
   /** Which kind of executor this is */
   readonly kind: ExecutorKind;
 
   /** Declared capabilities — immutable after construction */
-  getCapabilities(): ReadonlySet<ExecutorCapability>;
+  readonly capabilities: ReadonlySet<ExecutorCapability>;
 
-  // ── Lifecycle ──────────────────────────────────────────────
+  /** Check if the executor is currently reachable and healthy */
+  isAvailable(): boolean;
 
   /** Establish connection to the execution environment */
   connect(): Promise<void>;
@@ -138,152 +147,93 @@ interface ExecutionLayer {
   /** Tear down connection, release resources */
   disconnect(): Promise<void>;
 
-  /** Check if the executor is currently reachable and healthy */
-  isAvailable(): Promise<boolean>;
+  /** Tools exposed by this provider — each is a named operation */
+  readonly tools: Record<string, {
+    description: string;
+    execute: (...args: unknown[]) => Promise<unknown>;
+  }>;
 
-  // ── Execution ──────────────────────────────────────────────
+  /** Optional TypeScript type declarations for codemode */
+  readonly types?: string;
 
-  /** Execute a command and return results. The primary operation. */
-  execute(cmd: ExecuteCommand): Promise<ExecuteResult>;
-
-  // ── Filesystem (capability-gated) ──────────────────────────
-
-  /** Read a file from the executor's filesystem */
-  readFile(path: string): Promise<string>;
-
-  /** Write a file to the executor's filesystem */
-  writeFile(path: string, content: string): Promise<void>;
-
-  /** List directory contents */
-  listFiles(path: string): Promise<string[]>;
-
-  // ── Process management (capability-gated) ──────────────────
-
-  /** Spawn a long-running process (dev server, watcher, etc.) */
-  spawn(command: string, opts?: SpawnOptions): Promise<ProcessHandle>;
-
-  // ── File synchronization (for fs_owned executors) ──────────
-
-  /** Push files from agent VFS to executor filesystem */
-  syncTo?(paths: string[], agentVfs: VFS): Promise<SyncResult>;
-
-  /** Pull files from executor filesystem to agent VFS */
-  syncFrom?(paths: string[], agentVfs: VFS): Promise<SyncResult>;
-}
-
-type ExecutorKind = "inline" | "nimbus" | "sandbox" | "ssh";
-
-interface ExecuteCommand {
-  /** The command string (shell command, code to eval, etc.) */
-  command: string;
-  /** Working directory for execution */
-  cwd?: string;
-  /** Environment variables to inject */
-  env?: Record<string, string>;
-  /** Timeout in milliseconds (0 = no timeout) */
-  timeoutMs?: number;
-  /** Stream stdout/stderr as they arrive */
-  onStdout?: (chunk: string) => void;
-  onStderr?: (chunk: string) => void;
-}
-
-interface ExecuteResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  /** Wall-clock duration in milliseconds */
-  durationMs: number;
-}
-
-interface SpawnOptions {
-  cwd?: string;
-  env?: Record<string, string>;
-  /** If true, process survives executor disconnect */
-  detached?: boolean;
-}
-
-interface ProcessHandle {
-  readonly pid: number;
-  readonly id: string;
-  kill(signal?: "SIGTERM" | "SIGKILL"): Promise<void>;
-  streamLogs(): AsyncIterable<string>;
-  waitForExit(): Promise<{ exitCode: number }>;
-}
-
-interface SyncResult {
-  filesTransferred: number;
-  bytesTransferred: number;
-  errors: Array<{ path: string; error: string }>;
+  /** Whether tools use positional args (for codemode) */
+  readonly positionalArgs?: boolean;
 }
 ```
 
-### 2.3 ExecutionRouter
+**Key difference from original spec**: Instead of `execute()`, `readFile()`, `writeFile()`, `spawn()` as interface methods, the provider exposes a `tools` record. Each tool has a `description` (used by the LLM) and an `execute` function. This enables the codemode sandbox to call `namespace.toolName(args)` directly.
+
+### 2.3 ExecutionRouter **(Implemented)**
 
 ```typescript
-/**
- * Replaces AgentRuntime.executor. Routes commands to the best available
- * executor based on required capabilities.
- *
- * Formal correctness invariant (Lean: routing_correct):
- *   For any command C with required capabilities R, if router selects
- *   executor E, then R ⊆ E.getCapabilities().
- */
-interface ExecutionRouter {
-  /** All registered executors, ordered by priority */
-  readonly executors: ReadonlyArray<ExecutionLayer>;
+// From packages/core/src/execution/types.ts
 
-  /** The combined capabilities across all available executors */
-  readonly capabilities: ReadonlySet<ExecutorCapability>;
+interface ExecutionRouter {
+  /** Register a new executor provider */
+  register(provider: ExecutorProvider): void;
+
+  /** Remove a provider by name */
+  unregister(name: string): void;
+
+  /** Get a specific provider by name */
+  getProvider(name: string): ExecutorProvider | undefined;
 
   /**
-   * Execute a command, automatically routing to the best executor.
-   *
-   * 1. Determine required capabilities from the command
-   * 2. Find all executors that satisfy all required capabilities
-   * 3. Select the highest-priority available one
-   * 4. On failure, failover to the next qualifying executor
-   *
-   * Backward-compatible with the old Executor.execute() signature.
+   * Get all available providers with their tools for codemode injection.
+   * Returns only providers where isAvailable() is true.
+   * Each entry has: name, tools record, optional types, positionalArgs flag.
    */
-  execute(cmd: ExecuteCommand, required?: ExecutorCapability[]): Promise<ExecuteResult>;
+  getProviders(): Array<{
+    name: string;
+    tools: Record<string, { description: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+    types?: string;
+    positionalArgs?: boolean;
+  }>;
 
-  /** Access a specific executor by kind */
-  getLayer(kind: ExecutorKind): ExecutionLayer | undefined;
+  /** List all registered executors with availability status */
+  listExecutors(): ExecutorInfo[];
+}
 
-  /** Register a new executor at runtime */
-  register(layer: ExecutionLayer, priority?: number): void;
-
-  /** Remove an executor */
-  unregister(kind: ExecutorKind): void;
+interface ExecutorInfo {
+  name: string;
+  kind: ExecutorKind;
+  capabilities: string[];
+  available: boolean;
 }
 ```
+
+**Key difference from original spec**: The router does NOT route individual commands. Instead, it manages providers whose tools are injected into the codemode sandbox. The LLM calls `namespace.tool(args)` directly — the "routing" is the LLM choosing which namespace to use. The `AgentRuntime` keeps both `executor: Executor` (the legacy single-function interface) and `executionRouter?: ExecutionRouter` (optional, additive — not a replacement).
 
 ---
 
 ## 3. Capability Matrix
 
-| Capability | Inline | Nimbus | Sandbox | SSH |
-|------------|--------|--------|---------|-----|
-| `javascript` | **Yes** | **Yes** (V8 facet) | **Yes** (Node/Bun) | **Yes** (host runtime) |
-| `typescript` | **Yes** (esbuild) | **Yes** (esbuild-wasm) | **Yes** (tsc/esbuild) | **Yes** |
-| `python` | No | No | **Yes** (Python 3.13) | **Yes** (if installed) |
-| `native_binary` | No | No | **Yes** (gcc, make) | **Yes** |
-| `shell` | No | **Yes** (60+ cmds) | **Yes** (real bash) | **Yes** (real bash) |
-| `npm` | No | **Yes** (emulated) | **Yes** (real npm/bun) | **Yes** |
-| `git` | No | **Yes** (isomorphic-git) | **Yes** (real git) | **Yes** |
-| `docker` | No | No | No | **Yes** (if installed) |
+**(Implemented)** — derived from the actual capability sets in each executor's source code:
+
+| Capability | workspace | nimbus | sandbox | laptop |
+|------------|-----------|--------|---------|--------|
+| `javascript` | **Yes** | **Yes** | **Yes** | **Yes** |
+| `typescript` | **Yes** | **Yes** | **Yes** | **Yes** |
+| `python` | No | No | **Yes** | **Yes** |
+| `native_binary` | No | No | **Yes** | **Yes** |
+| `shell` | **Yes** | **Yes** | **Yes** | **Yes** |
+| `npm` | No | **Yes** | **Yes** | **Yes** |
+| `git` | No | **Yes** | **Yes** | **Yes** |
+| `docker` | No | No | No | **Yes** |
 | `fs_shared` | **Yes** | No | No | No |
-| `fs_owned` | No | **Yes** (SqliteVFS) | **Yes** (ext4) | **Yes** (host fs) |
-| `net_outbound` | No | **Yes** (fetch) | **Yes** (full TCP/UDP) | **Yes** |
-| `net_inbound` | No | **Yes** (port registry) | **Yes** (preview URLs) | **Yes** |
-| `process_spawn` | No | **Yes** (facets) | **Yes** (real fork) | **Yes** |
-| `process_long` | No | **Yes** (vite facet) | **Yes** (startProcess) | **Yes** |
-| `process_signal` | No | No | **Yes** (killProcess) | **Yes** |
-| `gpu` | No | No | No | **Yes** (if available) |
+| `fs_owned` | No | **Yes** | **Yes** | **Yes** |
+| `net_outbound` | No | **Yes** | **Yes** | **Yes** |
+| `net_inbound` | No | **Yes** | **Yes** | **Yes** |
+| `process_spawn` | No | **Yes** | **Yes** | **Yes** |
+| `process_long` | No | **Yes** | **Yes** | **Yes** |
+| `process_signal` | No | No | **Yes** | **Yes** |
+| `gpu` | No | No | No | **Yes** |
+
+Sources: `inline.ts:150`, `nimbus.ts:166`, `container.ts:164`, `ssh.ts:186`
 
 ### Performance Characteristics
 
-| Property | Inline | Nimbus | Sandbox | SSH |
+| Property | workspace | nimbus | sandbox | laptop |
 |----------|--------|--------|---------|-----|
 | Cold start | 0ms | 0ms (same DO) | 2-10s (container boot) | ~1s (tunnel RTT) |
 | Warm latency | <1ms | 5-50ms (RPC) | 50-200ms (container fetch) | 50-500ms (network) |
@@ -297,163 +247,93 @@ interface ExecutionRouter {
 
 ## 4. Executor Implementations
 
-### 4.1 InlineExecutor
+### 4.1 InlineExecutor (workspace) **(Implemented)**
 
-The simplest executor. Runs JavaScript in a V8 isolate within the same DO.
-On Cloudflare, uses `@cloudflare/codemode` via `LOADER` binding. On CLI,
-uses `Bun.spawn` with `addImplicitReturn`.
+The simplest executor. Shares the agent's SqliteFS directly.
+Namespace: `workspace`. Kind: `workspace`. 9 tools.
 
-```typescript
-class InlineExecutor implements ExecutionLayer {
-  readonly id = "inline";
-  readonly kind = "inline" as const;
+From `packages/core/src/execution/inline.ts`:
 
-  getCapabilities() {
-    return new Set<ExecutorCapability>(["javascript", "typescript", "fs_shared"]);
-  }
+| Tool | Description |
+|------|-------------|
+| `workspace.readFile(path)` | Read file from agent workspace |
+| `workspace.writeFile(path, content)` | Write file; auto-creates parents; auto-indexes `memory/` paths |
+| `workspace.readdir(path)` | List directory entries |
+| `workspace.exists(path)` | Check if path exists |
+| `workspace.exec(command)` | POSIX shell (16 commands: cat, grep, find, sed, ls, etc.) |
+| `workspace.searchMemory(query)` | FTS5 search over long-term memory |
+| `workspace.saveNote(content)` | Save note to MEMORY.md (FTS5-indexed) |
+| `workspace.listTools()` | List all built-in + crafted tools |
+| `workspace.createTool(name, desc, code)` | Create reusable tool in CraftStore |
 
-  async execute(cmd: ExecuteCommand): Promise<ExecuteResult> {
-    // CF: createExecuteTool via LOADER
-    // CLI: Bun.spawn with isolated subprocess
-    const result = await this.codemode.execute(cmd.command, []);
-    return { stdout: String(result.result ?? ""), stderr: "", exitCode: result.error ? 1 : 0, durationMs: 0 };
-  }
+Capabilities: `javascript`, `typescript`, `shell`, `fs_shared`.
 
-  // fs_shared: reads/writes go directly to agent VFS
-  async readFile(path: string) { return this.vfs.readFile(path, { encoding: "utf8" }) as Promise<string>; }
-  async writeFile(path: string, content: string) { await this.vfs.writeFile(path, content); }
-}
-```
+### 4.2 NimbusExecutor **(Implemented)**
 
-### 4.2 NimbusExecutor
+Delegates to a `NimbusSession` Durable Object via `NimbusStub._rpc*` methods.
+Namespace: `nimbus`. Kind: `nimbus`. 8 tools.
 
-Delegates to a `NimbusSession` Durable Object via RPC. The agent gets a
-stub to the Nimbus DO and calls shell commands on it.
+From `packages/core/src/execution/nimbus.ts`:
 
-```typescript
-class NimbusExecutor implements ExecutionLayer {
-  readonly kind = "nimbus" as const;
-  private stub: DurableObjectStub; // NimbusSession DO
+| Tool | Description |
+|------|-------------|
+| `nimbus.exec(command)` | Run shell command (60+ POSIX, npm, node, git) |
+| `nimbus.readFile(path)` | Read file from Nimbus filesystem |
+| `nimbus.writeFile(path, content)` | Write file to Nimbus filesystem |
+| `nimbus.readdir(path)` | List directory contents |
+| `nimbus.exists(path)` | Check if path exists |
+| `nimbus.stat(path)` | Get file/directory metadata |
+| `nimbus.mkdir(path)` | Create directory (recursive) |
+| `nimbus.rm(path)` | Delete a file |
 
-  getCapabilities() {
-    return new Set<ExecutorCapability>([
-      "javascript", "typescript", "shell", "npm", "git",
-      "fs_owned", "net_outbound", "net_inbound",
-      "process_spawn", "process_long",
-    ]);
-  }
+Capabilities: `javascript`, `typescript`, `shell`, `npm`, `git`, `fs_owned`, `net_outbound`, `net_inbound`, `process_spawn`, `process_long`.
 
-  async execute(cmd: ExecuteCommand): Promise<ExecuteResult> {
-    // RPC to NimbusSession._rpcExec(cmd.command)
-    return this.stub.exec(cmd.command);
-  }
+The `_rpcExec` method is optional — not all Nimbus builds expose it. Binding name: `NIMBUS_SESSION` (currently commented out in wrangler.jsonc).
 
-  // fs_owned: Nimbus has its own SqliteVFS
-  async syncTo(paths: string[], agentVfs: VFS) {
-    for (const path of paths) {
-      const content = await agentVfs.readFile(path, { encoding: "utf8" });
-      await this.stub._rpcWriteFile(path, content as string);
-    }
-    return { filesTransferred: paths.length, bytesTransferred: 0, errors: [] };
-  }
-}
-```
+### 4.3 ContainerExecutor (sandbox) **(Implemented)**
 
-### 4.3 SandboxExecutor
+Uses Cloudflare Containers via `ctx.container.getTcpPort(8080).fetch()` HTTP API.
+Full Linux environment. Namespace: `sandbox`. Kind: `sandbox`. 5 tools.
 
-Uses `@cloudflare/sandbox` (Cloudflare Containers). Full Linux environment
-with Python, Node, Bun, git, ripgrep, and any packages from the Dockerfile.
-Matches Seal's `SealSandbox` pattern.
+From `packages/core/src/execution/container.ts`:
 
-```typescript
-class SandboxExecutor implements ExecutionLayer {
-  readonly kind = "sandbox" as const;
-  private sandbox: SandboxHandle; // from getSandbox(env.Sandbox, id)
+| Tool | Description |
+|------|-------------|
+| `sandbox.exec(command)` | Execute shell command in Linux container |
+| `sandbox.readFile(path)` | Read file from container filesystem |
+| `sandbox.writeFile(path, content)` | Write content to container filesystem |
+| `sandbox.readdir(path)` | List directory contents |
+| `sandbox.exists(path)` | Check if path exists |
 
-  getCapabilities() {
-    return new Set<ExecutorCapability>([
-      "javascript", "typescript", "python", "native_binary",
-      "shell", "npm", "git",
-      "fs_owned", "net_outbound", "net_inbound",
-      "process_spawn", "process_long", "process_signal",
-    ]);
-  }
+Capabilities: `javascript`, `typescript`, `python`, `native_binary`, `shell`, `npm`, `git`, `fs_owned`, `net_outbound`, `net_inbound`, `process_spawn`, `process_long`, `process_signal`.
 
-  async connect() {
-    await this.sandbox.ping(); // wake up container
-  }
+Container port: 8080. Startup: 30s polling at 500ms intervals. Communication is via HTTP fetch to the container's TCP port.
 
-  async execute(cmd: ExecuteCommand): Promise<ExecuteResult> {
-    const t0 = Date.now();
-    const result = await this.sandbox.exec(cmd.command, [], {
-      cwd: cmd.cwd ?? "/workspace",
-      timeout: cmd.timeoutMs,
-    });
-    return {
-      stdout: result.stdout, stderr: result.stderr,
-      exitCode: result.exitCode, durationMs: Date.now() - t0,
-    };
-  }
+### 4.4 SSHTunnelExecutor (laptop) **(Implemented)**
 
-  async spawn(command: string, opts?: SpawnOptions): Promise<ProcessHandle> {
-    const proc = await this.sandbox.startProcess(command, { cwd: opts?.cwd });
-    return {
-      pid: proc.pid, id: proc.id,
-      kill: (sig) => this.sandbox.killProcess(proc.id, sig),
-      streamLogs: () => this.sandbox.streamProcessLogs(proc.id),
-      waitForExit: () => proc.wait(),
-    };
-  }
+Connects to the user's machine via a WebSocket bridge using JSON-RPC.
+Namespace: `laptop`. Kind: `laptop`. 5 tools.
 
-  // Sandbox SDK native file operations
-  async readFile(path: string) { return this.sandbox.readFile(path); }
-  async writeFile(path: string, content: string) { await this.sandbox.writeFile(path, content); }
-  async listFiles(path: string) { return this.sandbox.listFiles(path); }
+From `packages/core/src/execution/ssh.ts`:
 
-  // File sync via Sandbox SDK bulk operations
-  async syncTo(paths: string[], agentVfs: VFS) { /* batch writeFile */ }
-  async syncFrom(paths: string[], agentVfs: VFS) { /* batch readFile */ }
-}
-```
+| Tool | Description |
+|------|-------------|
+| `laptop.exec(command)` | Execute command on user's local machine |
+| `laptop.readFile(path)` | Read file from local filesystem (via `cat`) |
+| `laptop.writeFile(path, content)` | Write content (via RPC `writeFile`) |
+| `laptop.readdir(path)` | List directory (via `ls -1a`) |
+| `laptop.exists(path)` | Check path exists (via `test -e`) |
 
-### 4.4 SSHTunnelExecutor
+Capabilities: `javascript`, `typescript`, `python`, `native_binary`, `shell`, `npm`, `git`, `docker`, `fs_owned`, `net_outbound`, `net_inbound`, `process_spawn`, `process_long`, `process_signal`, `gpu`.
 
-Connects to the user's machine via a WebSocket bridge (the user runs a
-lightweight daemon that connects to the agent's DO via cloudflared tunnel
-or direct WebSocket). See §6 for the full security model.
-
-```typescript
-class SSHTunnelExecutor implements ExecutionLayer {
-  readonly kind = "ssh" as const;
-  private ws: WebSocket;
-
-  getCapabilities() {
-    // Capabilities are negotiated during connect() — the daemon reports
-    // what's available on the user's machine.
-    return this.negotiatedCapabilities;
-  }
-
-  async connect() {
-    // Wait for the user's daemon to connect to the agent's WebSocket
-    // endpoint. The daemon sends a capability advertisement on connect.
-    this.ws = await this.waitForDaemonConnection();
-    this.negotiatedCapabilities = await this.negotiateCapabilities();
-  }
-
-  async execute(cmd: ExecuteCommand): Promise<ExecuteResult> {
-    // Send command to daemon, daemon executes locally, streams results back
-    return this.rpc("execute", cmd);
-  }
-}
-```
+RPC timeout: 30s. Protocol: JSON-RPC over WebSocket via `TunnelSocket` interface.
+Methods: `setSocket(ws)`, `clearSocket()` for dynamic connection management.
 
 ---
 
-## 5. ExecutionRouter Design
+## 5. ExecutionRouter Design **(Design — partially implemented)**
 
-The router replaces `AgentRuntime.executor` and provides backward compatibility
-with the old `execute(code, providers)` signature while adding capability-based
-routing and failover.
+The router is an **optional, additive** field on `AgentRuntime` (`executionRouter?: ExecutionRouter`). It does NOT replace `AgentRuntime.executor` — both coexist. The router manages providers whose tools are injected into the codemode sandbox; the LLM decides which namespace to use.
 
 ### Routing Algorithm
 
@@ -471,28 +351,9 @@ ROUTE(command, requiredCapabilities):
   8. RETURN failure
 ```
 
-### Capability Inference
+### Capability Inference **(Design — not implemented)**
 
-For backward compatibility, the router infers required capabilities from the
-command content when the caller doesn't specify them explicitly:
-
-```typescript
-function inferCapabilities(command: string): Set<ExecutorCapability> {
-  const caps = new Set<ExecutorCapability>();
-
-  if (/\b(npm|yarn|pnpm|bun)\s+(install|run|test|build)/.test(command)) caps.add("npm");
-  if (/\b(git)\s+(clone|pull|push|commit|checkout)/.test(command)) caps.add("git");
-  if (/\b(python|python3|pip)\b/.test(command)) caps.add("python");
-  if (/\b(gcc|g\+\+|make|cmake|cargo|rustc)\b/.test(command)) caps.add("native_binary");
-  if (/\b(ls|cat|grep|find|sed|awk|mkdir|rm|cp|mv)\b/.test(command)) caps.add("shell");
-  if (/\b(docker|podman)\b/.test(command)) caps.add("docker");
-
-  // Default: if nothing specific detected, assume shell
-  if (caps.size === 0) caps.add("javascript");
-
-  return caps;
-}
-```
+The capability inference function described in v1.0 of this spec is not implemented. In the current architecture, the LLM chooses which namespace to use (workspace, nimbus, sandbox, laptop) based on the task description — routing is implicit in the LLM's tool selection.
 
 ### Priority Order
 
@@ -544,11 +405,11 @@ graph LR
 
 ### 6.3 SandboxExecutor Security
 
-Modeled after Seal's `SealSandbox`:
+Uses Linux containers with strong isolation:
 
 - **Isolation**: Linux container with cgroups + namespaces
 - **Filesystem**: Ephemeral ext4. Destroyed on container death. Backup/restore via R2
-- **Network**: Configurable egress allowlist (Seal uses per-repo OAuth grants)
+- **Network**: Configurable egress allowlist
 - **Process isolation**: Real process isolation (fork, exec, separate PID namespace)
 - **Lifecycle**: `provisioning → ready → recovering → error` state machine
   - Transient errors (500, 503, container disconnect) get automatic retry
@@ -670,16 +531,16 @@ The `SSHTunnelExecutor` converts this report into `ExecutorCapability` tokens.
 
 ---
 
-## 7. Integration with AgentRuntime
+## 7. Integration with AgentRuntime **(Implemented)**
 
-The `ExecutionRouter` replaces `AgentRuntime.executor`:
+The `ExecutionRouter` is an **optional, additive** field — it does NOT replace `executor`:
 
 ```typescript
+// From packages/core/src/types/agent-runtime.ts
 interface AgentRuntime {
   storage: Storage;
   memory: Memory;
-  // executor: Executor;  ← OLD: single execute() function
-  executor: ExecutionRouter;  // ← NEW: routes to best available executor
+  executor: Executor;                    // Legacy single-function interface (still required)
   llm: LLM;
   schedule: Schedule;
   identity: Identity;
@@ -687,58 +548,29 @@ interface AgentRuntime {
   judgeModel?: LLM;
   spawnBranch: SpawnBranch;
   abortBranch: AbortBranch;
-}
-```
-
-### Backward Compatibility
-
-The `ExecutionRouter` satisfies the old `Executor` interface:
-
-```typescript
-// Old code:
-const result = await rt.executor.execute(code, providers);
-
-// Still works — ExecutionRouter.execute() infers capabilities
-// and routes to the best executor:
-const result = await rt.executor.execute({
-  command: code,
-  timeoutMs: 30_000,
-});
-```
-
-### Capability Introspection
-
-Tools can query what's available before deciding what to do:
-
-```typescript
-// In a tool's execute function:
-if (rt.executor.capabilities.has("python")) {
-  return rt.executor.execute({ command: `python3 -c "${code}"` }, ["python"]);
-} else {
-  return rt.executor.execute({ command: code }, ["javascript"]);
+  executionRouter?: ExecutionRouter;     // Optional — additive, not a replacement
 }
 ```
 
 ### Per-Backend Construction
 
-```typescript
-// CF backend: multiple executors available
-function createCFRouter(env: Env, agent: OrchestratorAgent): ExecutionRouter {
-  const router = new ExecutionRouter();
-  router.register(new InlineExecutor(env.LOADER, agent.rt.vfs), 0);    // priority 0 (highest)
-  if (env.NimbusSession) router.register(new NimbusExecutor(env), 1);
-  if (env.Sandbox) router.register(new SandboxExecutor(env), 2);
-  // SSH executor registered dynamically when user connects daemon
-  return router;
-}
+From `packages/cf-backend/src/runtime.ts:80-121`:
 
-// CLI backend: just Bun subprocess
-function createCLIRouter(): ExecutionRouter {
-  const router = new ExecutionRouter();
-  router.register(new BunSubprocessExecutor(), 0);  // has ALL capabilities locally
-  return router;
-}
+```typescript
+// CF backend: DefaultExecutionRouter with conditional providers
+const router = new DefaultExecutionRouter();
+
+// Always registered:
+router.register(createInlineExecutor({ vfs, memory, craftStore, shell }));
+router.register(createSSHTunnelExecutor());
+
+// Conditional on bindings:
+if (env.NIMBUS_SESSION) router.register(createNimbusExecutor(env.NIMBUS_SESSION));
+if (env.CONTAINER)      router.register(createContainerExecutor(env.CONTAINER));
+else                    router.register(createContainerStub()); // stub for UI listing
 ```
+
+The router's `getProviders()` method filters to available providers and passes them to `createExecuteTool()`. The LLM sees all available namespaces and their tools in the codemode type declarations.
 
 ---
 
@@ -841,13 +673,33 @@ When both the agent VFS and the executor have modified the same file:
 
 ---
 
-## Appendix A: Lean Formalization
+## Appendix A: Lean Formalization **(Implemented)**
 
-Formal proofs for the execution layer live in `lean/Proteus/Execution.lean`:
+Formal proofs for the execution layer live in two files under `lean/Proteus/Execution/`:
 
-- `ExecutorCapability` as an inductive type
-- `capabilitySubsumption`: Sandbox ⊇ Nimbus ⊇ Inline
-- `routingCorrect`: router never sends a command to an executor lacking required capabilities
-- `failoverPreservation`: if primary fails, fallback satisfies the same capabilities
+### `Capabilities.lean` (9 theorems)
+
+- `ExecutorCapability` — inductive type with 16 variants matching the TypeScript union
+- `ExecutorKind` — `workspace | nimbus | container | ssh`
+- `container_subsumes_nimbus` — Container capabilities ⊇ Nimbus capabilities
+- `ssh_subsumes_container` — SSH capabilities ⊇ Container capabilities
+- `ssh_subsumes_nimbus` — Transitivity: SSH ⊇ Nimbus
+- `workspace_incomparable_nimbus` — Workspace is NOT subsumable by Nimbus (different profiles)
+- `chain` — Subsumption chain: ssh ⊇ container ⊇ nimbus
+- `route_satisfies_all` — Router selects executor satisfying all required capabilities
+- `route_available` — Selected executor is available
+- `route_has_all_caps` — Selected executor has all required capabilities
+- `subsumes_refl` / `subsumes_trans` — Reflexivity and transitivity
+
+### `ToolSystem.lean` (7 theorems)
+
+Models the 5-tool architecture (execute_tools, run, explore, save_note, search_memory):
+
+- `action_routes_to_valid_tool` — Every agent action maps to one of the 5 tools
+- `only_mcts_uses_explore` — Only MCTS exploration uses the explore tool
+- `shell_uses_run` — Shell execution uses the run tool
+- `memory_search_uses_search` / `memory_save_uses_note` — Memory operations route correctly
+- `file_ops_use_codemode` — File operations route through execute_tools
+- `empty_is_isolated` / `append_workspace_preserves` — Sandbox call isolation
 
 See the Lean source for complete proofs.

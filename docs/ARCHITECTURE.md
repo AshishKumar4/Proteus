@@ -4,6 +4,72 @@ Proteus is a self-evolving AI agent built on Cloudflare's Agents SDK. It uses Mo
 
 ## Message Flow
 
+### End-to-End: User Clicks Send → Response Appears
+
+```
+User types text + clicks Send (or presses Enter)
+│
+├─ WorkspacePage.handleSend()                         [WorkspacePage.tsx:577]
+│  wraps as { role: "user", parts: [{ type: "text", text }] }
+│
+├─ useProteus.sendChat(content)                       [use-proteus.ts:305]
+│  calls useAgentChat.sendMessage()
+│
+├─ WebSocketChatTransport.sendMessages()              [ai-chat react.js:64]
+│  generates requestId = nanoid(8)
+│  sends over WebSocket:
+│    { type: "cf_agent_use_chat_request",
+│      id: requestId,
+│      init: { method: "POST", body: JSON { messages, trigger } } }
+│
+═══════════════ NETWORK (WebSocket) ════════════════════
+│
+├─ Think._handleChatRequest()                         [think.js:815]
+│  parse body, append user messages to session,
+│  broadcast to other connections, enqueue in TurnQueue
+│  (wrapped in keepAliveWhile + runFiber for durability)
+│
+├─ Think._runInferenceLoop()                          [think.js:295]
+│  ├─ Merge tools: workspace + getTools() + session context + MCP + client
+│  ├─ getSystemPrompt() — read agent_soul
+│  ├─ Build + prune messages from session history
+│  ├─ getModel() — read agent_config
+│  ├─ beforeTurn() — reset counters, return activeTools
+│  └─ streamText({...})                               [Vercel AI SDK]
+│     │
+│     ├─ [MULTI-STEP LOOP — managed by AI SDK, up to 500 steps]
+│     │  ├─ Model generates text + optional tool calls
+│     │  ├─ onChunk fires per token → orchestrator logs first chunk
+│     │  ├─ If tool calls present:
+│     │  │  ├─ AI SDK calls tool.execute(args) automatically
+│     │  │  └─ onStepFinish fires:
+│     │  │     ├─ afterToolCall → orchestrator records tool call
+│     │  │     └─ onStepFinish → orchestrator increments step count
+│     │  └─ If model stops or maxSteps reached: exit loop
+│     │
+│     └─ Returns StreamTextResult
+│
+├─ Think._streamResult()                              [think.js:944]
+│  ├─ Stream chunks to all WebSocket clients as cf_agent_use_chat_response
+│  ├─ Send { done: true } on completion
+│  ├─ Persist assistant message to session
+│  └─ _fireResponseHook()
+│
+├─ OrchestratorAgent.onChatResponse()                 [orchestrator.ts:468]
+│  ├─ Build CompletedTurn { userMessage, assistantResponse, toolCalls, steps, durationMs }
+│  ├─ void engine.onTurnComplete(turn)   — async, never blocks TurnQueue
+│  └─ Every 5 turns: void engine.onSessionComplete(sessionData)
+│
+═══════════════ NETWORK (WebSocket) ════════════════════
+│
+├─ WebSocketChatTransport ReadableStream listener     [ai-chat react.js:110]
+│  matches response by requestId, parses UIMessageChunks
+│
+├─ AI SDK useChat processes stream, updates messages array
+│
+└─ WorkspacePage re-renders message list               [WorkspacePage.tsx:632]
+```
+
 ```mermaid
 sequenceDiagram
     participant U as User (Browser)
@@ -14,18 +80,18 @@ sequenceDiagram
     participant Evo as EvolutionEngine
     participant DB as DO SQLite
 
-    U->>WS: Send message
-    WS->>T: CF_AGENT_CHAT_REQUEST
-    T->>T: beforeTurn() — reset counters
-    T->>T: getModel() — read agent_config
+    U->>WS: cf_agent_use_chat_request
+    WS->>T: _handleChatRequest → TurnQueue.enqueue
+    T->>T: getTools() — 5 tools + session context
     T->>T: getSystemPrompt() — read agent_soul
-    T->>T: getTools() — buildAgentTools + shell + explore + codemode
+    T->>T: getModel() — read agent_config
+    T->>T: beforeTurn() — reset counters, set activeTools
     T->>LLM: streamText(model, system, messages, tools)
     loop Tool calling loop (up to 500 steps)
         LLM-->>T: text delta / tool call
         T-->>U: stream chunk via WebSocket
         opt Tool call
-            T->>Tools: execute tool
+            T->>Tools: AI SDK calls tool.execute() automatically
             Tools-->>T: tool result
             T->>T: afterToolCall() — record for evolution
             T->>LLM: continue with tool result
@@ -33,10 +99,10 @@ sequenceDiagram
         T->>T: onStepFinish() — increment counter
     end
     LLM-->>T: done
-    T-->>U: done:true
+    T-->>U: cf_agent_use_chat_response { done: true }
     T->>DB: persist assistant message (Think Session)
     T->>Evo: void onTurnComplete(turn) — fire and forget
-    Note over Evo: Runs async — does NOT block next message
+    Note over Evo: Runs async — does NOT block TurnQueue
     Evo->>DB: assess quality, reflect, extract patterns
     Evo->>DB: write evolution_events
 ```
@@ -80,7 +146,7 @@ graph LR
     end
 
     subgraph "Durable Objects"
-        Orch["OrchestratorAgent<br/>extends Think&lt;Env&gt;<br/><br/>SQLite: agent_soul, agent_identity,<br/>vfs_files, memory_chunks,<br/>crafted_tools, search_nodes,<br/>evolution_events, agent_config,<br/>scaffold_versions, fibers"]
+        Orch["OrchestratorAgent<br/>extends Think&lt;Env&gt;<br/><br/>SQLite: agent_soul, agent_identity,<br/>agent_config, vfs_files, memory_chunks,<br/>crafted_tools, craft_scores, search_nodes,<br/>evolution_events, scaffold_versions,<br/>scaffold_regression_fixtures, task_history,<br/>fibers, messages, conversation_history,<br/>executor_output, activity_log"]
 
         subgraph "Facets (MCTS branches)"
             E1["ExplorationAgent #1<br/>extends Agent&lt;Env&gt;<br/>Isolated SQLite: traces"]
@@ -97,7 +163,7 @@ graph LR
 
 ## AgentRuntime Interface
 
-The `AgentRuntime` is the central contract. Every backend (CF Workers or CLI) must provide these 6 primitives:
+The `AgentRuntime` is the central contract. Every backend (CF Workers or CLI) must provide these primitives:
 
 | Primitive | Interface | CF Backend | CLI Backend |
 |-----------|-----------|------------|-------------|
@@ -108,9 +174,11 @@ The `AgentRuntime` is the central contract. Every backend (CF Workers or CLI) mu
 | **Schedule** | `after`, `cron`, `fiber` | `agent.runFiber()` (durable) | SQLite-backed fiber |
 | **Identity** | `id`, `name`, `scaffold.*` | DO ID + agent_soul table | UUID + ~/.proteus/ directory |
 
-Additional runtime components:
+Additional runtime fields:
 - **CraftStore** — FTS5-indexed learned tool storage
 - **SpawnBranch** / **AbortBranch** — MCTS branch lifecycle (Facets on CF, child_process on CLI)
+- **ExecutionRouter** (optional) — multi-executor routing for codemode
+- **JudgeModel** (optional) — second LLM for cross-model judging
 
 ## Think Lifecycle Hooks
 
@@ -120,8 +188,8 @@ The `OrchestratorAgent` extends Think and implements these hooks:
 |------|------|-------------------|
 | `getModel()` | Every turn | Read stored model preference from `agent_config`, create Workers AI or AI Gateway model |
 | `getSystemPrompt()` | Every turn | Read agent soul from `agent_soul` table |
-| `getTools()` | Every turn | Return domain tools + shell + explore + optional codemode. Think auto-adds workspace tools. |
-| `configureSession()` | Session init | Memory context block (3000 tokens) + cached prompt |
+| `getTools()` | Every turn | Build 5-tool ToolSet (execute_tools, run, explore, save_note, search_memory). Cached by CraftStore version. `activeTools` restricts Think to only these 5 + session context tools. |
+| `configureSession()` | Session init | Memory context block (32000 tokens) + cached prompt |
 | `beforeTurn()` | Before inference | Reset turn tracking (tool calls, step count, timer) |
 | `afterToolCall()` | After each tool | Record tool call for evolution pattern extraction |
 | `onStepFinish()` | After each step | Increment step counter |

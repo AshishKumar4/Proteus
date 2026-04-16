@@ -28,12 +28,12 @@ cd packages/cf-backend
 
 # Create .dev.vars with your AI Gateway credentials
 cat > .dev.vars << 'EOF'
-AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-name>/compat/chat/completions
+AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-name>/workers-ai/v1
 AI_GATEWAY_AUTH=Bearer <your-token>
 EOF
 
-# Start dev server
-CLOUDFLARE_ACCOUNT_ID=<your-account-id> npx vite dev --port 5173 --host 0.0.0.0
+# Start dev server (from repo root)
+bun run dev
 ```
 
 Open http://localhost:5173 in your browser. The Vite cloudflare() plugin runs real Durable Objects locally via Miniflare.
@@ -43,7 +43,7 @@ Open http://localhost:5173 in your browser. The Vite cloudflare() plugin runs re
 ```bash
 cd packages/cli && bun link
 
-export PROTEUS_BASE_URL="https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway>/compat/chat/completions"
+export PROTEUS_BASE_URL="https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway>/workers-ai/v1"
 export PROTEUS_AUTH="Bearer <your-token>"
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 
@@ -70,14 +70,14 @@ Set your `account_id` in `packages/cf-backend/wrangler.jsonc`:
 cd packages/cf-backend
 
 # Set the AI Gateway auth token as a Wrangler secret (encrypted, never in code)
-printf 'Bearer <your-token>' | npx wrangler secret put AI_GATEWAY_AUTH
+printf 'Bearer <your-token>' | bunx wrangler secret put AI_GATEWAY_AUTH
 ```
 
 ### 3. Build and Deploy
 
 ```bash
-npx vite build
-npx wrangler deploy
+bunx vite build
+bunx wrangler deploy
 ```
 
 ### 4. Custom Domain (Optional)
@@ -93,22 +93,20 @@ curl -X PUT "https://api.cloudflare.com/client/v4/accounts/<account-id>/workers/
 
 ## AI Gateway Setup
 
-Proteus uses Cloudflare AI Gateway as a proxy to Workers AI models. The `/compat/chat/completions` endpoint provides an OpenAI-compatible API.
+Proteus uses Cloudflare AI Gateway as a proxy to Workers AI models. The `/workers-ai/v1` endpoint provides access to Workers AI models.
 
 1. Go to [Cloudflare Dashboard > AI > AI Gateway](https://dash.cloudflare.com/?to=/:account/ai/ai-gateway)
 2. Create a new gateway (e.g., `proteus-ai-gateway`)
-3. Copy the gateway URL: `https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-name>/compat/chat/completions`
+3. Copy the gateway URL: `https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-name>/workers-ai/v1`
 4. Create an API token with Workers AI permissions
 5. Set the token as `AI_GATEWAY_AUTH` secret (see above)
 
 ### Supported Models
 
-| Model ID | Name | Best For |
-|----------|------|----------|
-| `@cf/moonshotai/kimi-k2.5` | Kimi K2.5 | Complex reasoning (slow) |
-| `@cf/meta/llama-4-scout-17b-16e-instruct` | Llama 4 Scout | Quick tasks (fast) |
-
-Model IDs are automatically prefixed with `workers-ai/` for the `/compat/` endpoint.
+| Model ID | Name | Description |
+|----------|------|-------------|
+| `@cf/moonshotai/kimi-k2.5` | Kimi K2.5 | Advanced reasoning model with extended thinking |
+| `@cf/meta/llama-4-scout-17b-16e-instruct` | Llama 4 Scout 17B | General-purpose instruction model |
 
 ## Environment Variables
 

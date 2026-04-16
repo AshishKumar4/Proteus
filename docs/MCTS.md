@@ -46,31 +46,46 @@ Where:
 - `parent_visits` = number of times the parent was visited
 - `node_visits` = number of times this node was visited
 
-Implemented in SQL (from `mcts/uct.ts`):
+Implemented in SQL (from `mcts/uct.ts:33-47`). Selects the best open node across the entire tree via a self-join to look up parent visits:
 ```sql
-SELECT id, 
-  value + ? * sqrt(log(MAX(1, ?)) / log(2.718281828) / MAX(1, visits)) as uct
-FROM search_nodes 
-WHERE status = 'open' AND parent_id = ?
-ORDER BY uct DESC LIMIT 1
+SELECT
+  s.*,
+  COALESCE(p.visits, 1) AS parent_visits
+FROM search_nodes s
+LEFT JOIN search_nodes p ON s.parent_id = p.id
+WHERE s.status = 'open'
+ORDER BY (
+  s.value + W * sqrt(
+    (log(max(1.0, COALESCE(p.visits, 1))) / log(exp(1.0))) /
+    max(1.0, s.visits)
+  )
+) DESC
+LIMIT 1
 ```
+
+Note: SQLite's `log()` is log10, so natural log is computed as `log(x) / log(exp(1.0))`.
 
 ## Backpropagation
 
-Uses a `WITH RECURSIVE` CTE to walk from the evaluated leaf node up to the root, updating each ancestor's running mean:
+Uses a `WITH RECURSIVE` CTE to walk from the evaluated leaf node up to the root, updating each ancestor's running mean (from `mcts/backpropagation.ts:38-52`):
 
 ```sql
-WITH RECURSIVE ancestors AS (
-  SELECT id, parent_id FROM search_nodes WHERE id = ?
+WITH RECURSIVE ancestors(id, depth) AS (
+  SELECT id, 0 FROM search_nodes WHERE id = ?
   UNION ALL
-  SELECT sn.id, sn.parent_id FROM search_nodes sn
-  JOIN ancestors a ON sn.id = a.parent_id
+  SELECT s.parent_id, a.depth + 1
+  FROM search_nodes s
+  JOIN ancestors a ON s.id = a.id
+  WHERE s.parent_id IS NOT NULL
 )
-UPDATE search_nodes 
-SET visits = visits + 1,
-    value = (value * visits + ?) / (visits + 1)
+UPDATE search_nodes
+SET
+  visits = visits + 1,
+  value  = (value * visits + ?) / (visits + 1)
 WHERE id IN (SELECT id FROM ancestors)
 ```
+
+Reward is clamped to `[0, 1]` before backpropagation.
 
 **Running mean formula**: `new_value = (old_value × visits + reward) / (visits + 1)`
 
@@ -102,19 +117,20 @@ ExplorationAgent has 3 `@callable()` methods:
 | `visits` | INTEGER | Number of backpropagation passes |
 | `value` | REAL | Running mean score (0-1) |
 | `status` | TEXT | `open`, `terminal`, `pruned`, `failed` |
+| `code_used` | TEXT | Code extracted from exploration branches |
 | `msg_id` | TEXT | Session message ID for tree navigation |
+| `branch_agent_key` | TEXT | Maps to the Facet agent key |
 | `created_at` | INTEGER | Epoch milliseconds |
 
 ## Formal Properties (Lean 4)
 
-The MCTS engine has 7 formally verified properties:
+MCTS-related proofs live in `lean/Proteus/MCTS/`:
 
-| Property | File | Status |
-|----------|------|--------|
-| Budget terminates (well-founded on Nat) | `Convergence.lean` | Proven |
-| Backprop preserves node IDs | `Backpropagation.lean` | Proven |
-| Backprop increments visit counts | `Backpropagation.lean` | Proven |
-| Initial backprop state is valid | `Backpropagation.lean` | Proven |
-| Best open node survives pruning | `Convergence.lean` | Proven |
-| Storage isolation is an invariant | `DistributedModel.lean` | All 7 cases proven |
-| Branch cannot modify orchestrator | `CapabilitySafety.lean` | Proven |
+| Property | File | Theorem | Status |
+|----------|------|---------|--------|
+| Budget terminates (well-founded on Nat) | `StorageIsolation.lean` | `budget_well_founded` | Proven |
+| Initial state is storage-isolated | `StorageIsolation.lean` | `init_isolated` | Proven |
+| All 7 MCTS transitions preserve isolation | `StorageIsolation.lean` | `transition_preserves_isolation` | Proven |
+| Initial backprop state is valid | `Backpropagation.lean` | `initial_valid` | Proven |
+| Initial values equal at first step | `Backpropagation.lean` | `init_values_equal_at_first_step` | Proven |
+| Backprop preserves node IDs | `Backpropagation.lean` | `backprop_preserves_ids` | Proven |
