@@ -108,7 +108,11 @@ export function buildAgentTools(rt: AgentRuntime): ToolSet {
       }),
       execute: safe(async () => {
         const crafted = rt.craftStore.list();
-        const builtInNames = ['search_memory', 'read_file', 'write_file', 'execute_code', 'save_note', 'list_tools'];
+        const builtInNames = [
+          'read', 'write', 'edit', 'list', 'find', 'grep', 'delete',
+          'shell_exec', 'search_memory', 'save_note', 'execute_code',
+          'list_tools', 'explore',
+        ];
         const lines = builtInNames.map(n => `[built-in] ${n}`);
         for (const t of crafted) lines.push(`[crafted] ${t.name}: ${t.description}`);
         return lines.join('\n');
