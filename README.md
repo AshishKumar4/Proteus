@@ -1,88 +1,99 @@
 # Proteus
 
-A self-evolving agent architecture with MCTS-based parallel exploration, mutable scaffolding, and durable skill evolution. Runs on Cloudflare Workers (Durable Objects) or Linux CLI.
+A self-evolving AI agent that improves itself through Monte Carlo Tree Search, learns reusable tool patterns, and rewrites its own execution logic. Built on Cloudflare's [Think](https://github.com/cloudflare/agents) framework with Durable Objects for persistent state and formally verified safety properties in Lean 4.
 
-## CLI Quick Start
-
-```bash
-# Install
-bun install
-cd packages/cli && bun link
-
-# Configure (pick one)
-export PROTEUS_BASE_URL="https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/workers-ai/v1"
-export PROTEUS_AUTH="Bearer <token>"
-export PROTEUS_MODEL="@cf/moonshotai/kimi-k2.5"      # optional, this is the default
-
-# Or save to config file
-mkdir -p ~/.proteus
-echo '{"baseUrl":"...","auth":"Bearer ..."}' > ~/.proteus/config.json
-
-# Use
-proteus create atlas --purpose "A code review expert"
-proteus chat atlas
-proteus status atlas
-proteus list
-proteus evolve atlas --budget 3
-```
+**Live:** [proteus.ashishkumarsingh.com](https://proteus.ashishkumarsingh.com)
 
 ## Architecture
 
-The agent uses Monte Carlo Tree Search (LATS) to explore multiple solution approaches in parallel, pruning bad branches and converging on the best. Over time, successful patterns are extracted into a CraftStore and injected into future explorations.
+```mermaid
+graph TB
+    subgraph "Browser"
+        UI["React UI<br/>useAgent + useAgentChat"]
+    end
 
-**Key features:**
-- **MCTS parallel exploration** with UCT selection, backpropagation, pruning
-- **Mutable scaffold** — the agent's own agentic loop is code it can evolve
-- **4-gate scaffold validation** — structural, parse, regression, canary testing
-- **CraftStore** with EMA scoring, time decay, conflict detection, consolidation
-- **Multi-model evaluation** — cross-model judging eliminates self-enhancement bias
-- **Portable** — same core runs on CF Workers or Linux CLI
+    subgraph "Cloudflare Workers"
+        Worker["Worker<br/>routeAgentRequest()"]
+        subgraph "Durable Objects"
+            Orch["OrchestratorAgent<br/>extends Think<br/><br/>Chat · Tools · Evolution<br/>Memory · CraftStore · MCTS"]
+            E1["ExplorationAgent #1"]
+            E2["ExplorationAgent #N"]
+        end
+    end
+
+    subgraph "AI"
+        GW["AI Gateway<br/>/compat/chat/completions"]
+        Model["Workers AI<br/>Kimi K2.5 / Llama 4"]
+    end
+
+    UI <-->|WebSocket| Worker
+    Worker --> Orch
+    Orch -->|"subAgent (Facets)"| E1
+    Orch -->|"subAgent (Facets)"| E2
+    Orch -->|streamText| GW
+    GW --> Model
+```
+
+## Key Features
+
+- **MCTS parallel exploration** — UCT selection, backpropagation, pruning, convergence. Each branch is an isolated Durable Object via Facets.
+- **3-timescale evolution** — turn-level (quality → reflection), session-level (pattern consolidation → scaffold mutation), lifetime (full MCTS exploration)
+- **CraftStore** — learns reusable tools from conversations. EMA scoring with time decay. FTS5-indexed for search.
+- **Mutable scaffold** — the agent's agentic loop is code it can rewrite, validated through 4 structural gates
+- **POSIX shell emulator** — 16 commands (ls, grep, find, sed, cat, etc.) over virtual filesystem. No real OS needed on Workers.
+- **Formally verified** — 25+ Lean 4 theorems covering capability safety, storage isolation, budget termination, backprop correctness
+- **Portable** — same core runs on Cloudflare Workers (Think + DOs) or local CLI (bun:sqlite)
+
+## Quick Start
+
+### Web UI
+
+```bash
+bun install
+cd packages/cf-backend
+# Create .dev.vars with AI Gateway credentials (see docs/DEPLOYMENT.md)
+CLOUDFLARE_ACCOUNT_ID=<your-id> npx vite dev --port 5173 --host 0.0.0.0
+```
+
+### CLI
+
+```bash
+cd packages/cli && bun link
+export PROTEUS_BASE_URL="https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions"
+export PROTEUS_AUTH="Bearer <your-token>"
+
+proteus create myagent --purpose "A helpful coding assistant"
+proteus chat myagent
+```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/ARCHITECTURE.md) | System design, message flow, package structure, Think lifecycle |
+| [Evolution](docs/EVOLUTION.md) | 3-timescale self-evolution, CraftStore lifecycle, scaffold mutation |
+| [MCTS](docs/MCTS.md) | Monte Carlo Tree Search, UCT formula, branch isolation, convergence |
+| [Tools](docs/TOOLS.md) | All 15+ agent tools, shell emulator, code execution, crafted tools |
+| [Storage](docs/STORAGE.md) | Data model, SqliteFS, MemoryStore FTS5, table schemas |
+| [Deployment](docs/DEPLOYMENT.md) | Local dev, Cloudflare deploy, AI Gateway setup, secrets |
+| [Formal Spec](docs/FORMAL-SPEC.md) | Lean 4 proofs, TSLean type bridge, verified properties |
 
 ## Packages
 
-| Package | Purpose |
-|---------|---------|
-| `packages/core` | Platform-independent algorithms, types, config |
-| `packages/cli` | CLI frontend (`proteus` command) |
-| `packages/cli-backend` | Linux-specific primitives (SQLite, vm, child_process) |
-| `packages/cf-backend` | Cloudflare Workers (Think + Durable Objects) |
+| Package | Description |
+|---------|-------------|
+| `core/` | Platform-independent: MCTS engine, EvolutionEngine, CraftStore, scaffold, tools, types |
+| `agent-utils/` | SqliteFS (chunked VFS), MemoryStore (FTS5), CraftStore (FTS5), POSIX shell emulator |
+| `cf-backend/` | Cloudflare Workers: OrchestratorAgent (Think), ExplorationAgent (Facets), React UI |
+| `cli/` | CLI commands: create, chat, evolve, status, list, export, import |
+| `cli-backend/` | Linux runtime: bun:sqlite, Node vm sandbox, child_process MCTS branches |
 
 ## Development
 
 ```bash
 bun install
-bun run check                           # TypeScript type-check
-bun test --cwd packages/core            # unit + integration tests
-NODE_TLS_REJECT_UNAUTHORIZED=0 \
-  bun test tests/e2e-full-lifecycle.test.ts  # E2E (needs LLM credentials)
-```
-
-## Configuration
-
-All parameters are configurable via `AgentConfig`. See `packages/core/src/config.ts` for defaults.
-
-```typescript
-import { mergeConfig } from '@proteus/core';
-
-const config = mergeConfig({
-  mcts: { maxDepth: 10, explorationWeight: 1.0 },
-  craftStore: { halfLifeDays: 14 },
-});
-```
-
-## LLM Provider
-
-Uses Vercel AI SDK (`@ai-sdk/openai-compatible`) — works with any OpenAI-compatible endpoint:
-
-```typescript
-import { createVercelAILLM } from '@proteus/core';
-
-const llm = createVercelAILLM({
-  name: 'workers-ai',
-  baseURL: process.env.PROTEUS_BASE_URL!,
-  headers: { 'cf-aig-authorization': process.env.PROTEUS_AUTH! },
-  model: '@cf/moonshotai/kimi-k2.5',
-});
+bun run check                    # TypeScript type-check (0 errors)
+bun test --cwd packages/core     # 63 unit tests
 ```
 
 ## License
