@@ -102,23 +102,59 @@ export function useProteus(agentId?: string) {
     } else if (wasStreaming.current) {
       wasStreaming.current = false;
       addLog("info", "Streaming ended — refreshing data");
-      // Refresh evolution events (new ones may have been created by onChatResponse)
-      agent.call("getEvolutionEvents", [50])
-        .then(events => {
-          const rows = (events as EvolutionEventRow[]).reverse();
-          setEvolutionEvents(rows);
-          // Log new evolution events
-          for (const e of rows.slice(-3)) {
-            addLog("evolution", `${e.type}: ${e.message.slice(0, 80)}`);
-          }
-        })
-        .catch(() => {});
-      // Refresh memory content
-      agent.call("getMemoryContent", [])
-        .then(c => { setMemoryContent(c as string ?? ""); })
-        .catch(() => {});
+      refreshLiveData();
     }
   }, [isStreaming, agent, addLog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Periodic refresh for MCTS tree, evolution events, and memory (every 3s)
+  useEffect(() => {
+    if (!isConnected) return;
+    const interval = setInterval(refreshLiveData, 3000);
+    return () => clearInterval(interval);
+  }, [isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for MCTS progress broadcasts from the server
+  useEffect(() => {
+    if (!isConnected) return;
+    const handler = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "mcts-progress") {
+          addLog("evolution", `MCTS ${msg.phase}: ${msg.nodeCount ?? 0} nodes (iter ${msg.iteration ?? "?"})`);
+          if (msg.nodes && msg.nodes.length > 0) {
+            setMctsTree(buildTree(msg.nodes));
+          }
+          // Also refresh evolution events on MCTS progress
+          agent.call("getEvolutionEvents", [200])
+            .then(events => setEvolutionEvents((events as EvolutionEventRow[]).reverse()))
+            .catch(() => {});
+        }
+      } catch { /* not JSON or not our message */ }
+    };
+    // The agent's underlying WebSocket fires "message" events
+    const ws = (agent as unknown as { _ws?: WebSocket })._ws;
+    ws?.addEventListener("message", handler);
+    return () => ws?.removeEventListener("message", handler);
+  }, [isConnected, agent, addLog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function refreshLiveData() {
+    agent.call("getEvolutionEvents", [200])
+      .then(events => setEvolutionEvents((events as EvolutionEventRow[]).reverse()))
+      .catch(() => {});
+    agent.call("getMctsTree", [])
+      .then((nodes) => {
+        const list = nodes as Array<{
+          id: string; parent_id: string | null; depth: number;
+          visits: number; value: number; status: string; action: string;
+          task?: string; observation?: string; created_at?: number;
+        }>;
+        if (list.length > 0) setMctsTree(buildTree(list));
+      })
+      .catch(() => {});
+    agent.call("getMemoryContent", [])
+      .then(c => { setMemoryContent(c as string ?? ""); })
+      .catch(() => {});
+  }
 
   // Log tool calls as they appear in messages
   const seenToolCalls = useRef(new Set<string>());
@@ -313,12 +349,15 @@ export function useHomeConnection() {
 function buildTree(nodes: Array<{
   id: string; parent_id: string | null; depth: number;
   visits: number; value: number; status: string; action: string;
+  task?: string; observation?: string; created_at?: number;
 }>): MCTSNode {
   const map = new Map<string, MCTSNode>();
   for (const n of nodes) {
     map.set(n.id, {
       id: n.id, parentId: n.parent_id, depth: n.depth, visits: n.visits,
-      value: n.value, status: n.status as MCTSNode["status"], action: n.action, children: [],
+      value: n.value, status: n.status as MCTSNode["status"], action: n.action,
+      task: n.task, observation: n.observation, createdAt: n.created_at,
+      children: [],
     });
   }
   let root: MCTSNode | null = null;

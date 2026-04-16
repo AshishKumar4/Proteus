@@ -67,7 +67,14 @@ export class OrchestratorAgent extends Think<Env> {
   }
 
   private get engine(): EvolutionEngine {
-    if (!this._engine) this._engine = new EvolutionEngine(this.rt, { enabled: true });
+    if (!this._engine) {
+      this._engine = new EvolutionEngine(this.rt, {
+        enabled: true,
+        onMctsProgress: (iteration, remaining) => {
+          this.broadcastMctsProgress("iteration", iteration, remaining);
+        },
+      });
+    }
     return this._engine;
   }
 
@@ -169,6 +176,7 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
           // The inner MCTS fiber (rt.schedule.fiber('mcts')) nests inside this one.
           return await orchestrator.runFiber(`explore-${Date.now()}`, async (ctx) => {
             ctx.stash({ task: args.task, phase: "starting" });
+            orchestrator.broadcastMctsProgress("explore-starting");
             const session = orchestrator.createMCTSSession();
             const { nanoid } = await import("@proteus/core");
             await session.appendMessage(
@@ -177,6 +185,7 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
             );
             ctx.stash({ task: args.task, phase: "running" });
             await orchestrator.engine.onLifetimeEvolution(session);
+            orchestrator.broadcastMctsProgress("explore-completed");
             ctx.stash({ task: args.task, phase: "completed" });
             const best = orchestrator.sql<{ action: string; value: number }>`
               SELECT action, value FROM search_nodes WHERE status = 'terminal'
@@ -427,7 +436,7 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
   @callable() async doSearchMemory(query: string) { return this.rt.memory.search(query, 10); }
 
   @callable() async getMctsTree() {
-    return this.sql`SELECT id, parent_id, depth, visits, value, status, action
+    return this.sql`SELECT id, parent_id, depth, visits, value, status, action, task, observation, created_at
       FROM search_nodes ORDER BY depth, created_at`;
   }
 
@@ -486,15 +495,38 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
     return { purpose };
   }
 
+  /**
+   * Broadcast the current MCTS tree to all connected WebSocket clients.
+   * Called after each MCTS iteration so the UI updates in real-time.
+   */
+  broadcastMctsProgress(phase: string, iteration?: number, budget?: number) {
+    try {
+      const nodes = this.sql`SELECT id, parent_id, depth, visits, value, status, action, task, observation, created_at
+        FROM search_nodes ORDER BY depth, created_at`;
+      this.broadcast(JSON.stringify({
+        type: "mcts-progress",
+        phase,
+        iteration,
+        budget,
+        nodeCount: nodes.length,
+        nodes,
+      }));
+    } catch (err) {
+      console.warn("[proteus] broadcastMctsProgress failed:", err);
+    }
+  }
+
   @callable()
   async triggerEvolution(budget = 5) {
     // Outer fiber for durability + checkpointing. Nested fibers are supported
     // in the Agent SDK (each gets its own ID, cf_agents_runs row, ALS context).
     return this.runFiber("lifetime-evolution", async (ctx) => {
       ctx.stash({ phase: "starting", budget });
+      this.broadcastMctsProgress("starting", 0, budget);
       const session = this.createMCTSSession();
       ctx.stash({ phase: "mcts", budget });
       await this.engine.onLifetimeEvolution(session);
+      this.broadcastMctsProgress("completed");
       ctx.stash({ phase: "completed" });
       return { status: "completed", budget };
     });

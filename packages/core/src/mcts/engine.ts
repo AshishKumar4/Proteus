@@ -162,6 +162,9 @@ export async function runMCTS(
       phase.iteration++;
       phase.budget--;
       ctx.stash(phase);
+
+      // Notify caller for real-time UI updates
+      config.onIterationComplete?.(phase.iteration, phase.budget);
     }
 
     return converge(rt, session, minAcceptableScore);

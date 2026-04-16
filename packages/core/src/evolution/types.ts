@@ -51,6 +51,8 @@ export interface EvolutionConfig {
   lifetimeEvolutionInterval: number;
   lifetimeMCTSBudget: number;
   lifetimeMCTSBranches: number;
+  /** Called after each MCTS iteration — for real-time UI broadcasting */
+  onMctsProgress?: (iteration: number, remainingBudget: number) => void;
 }
 
 export const DEFAULT_EVOLUTION_CONFIG: EvolutionConfig = {

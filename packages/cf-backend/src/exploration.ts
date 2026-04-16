@@ -51,7 +51,7 @@ export class ExplorationAgent extends Agent<Env> {
     craftedTools: CraftedTool[],
   ): Promise<{ text: string; codeUsed: string | null }> {
     const model = this.getModel();
-    const context = priorHistory.map(m => `${m.role}: ${m.content}`).join("\n").slice(-800);
+    const context = priorHistory.map(m => `${m.role}: ${m.content}`).join("\n").slice(-2000);
     const toolHints = craftedTools.length > 0
       ? `\nKnown patterns:\n${craftedTools.map(t => `- ${t.name}: ${t.description}`).join("\n")}`
       : "";
@@ -60,7 +60,7 @@ export class ExplorationAgent extends Agent<Env> {
       model,
       system: "You are an expert agent exploring one approach to solve a task." + toolHints,
       messages: [{ role: "user" as const, content: `Prior context:\n${context}\n\nPropose ONE specific concrete approach in 2-3 sentences.` }],
-      maxTokens: 512,
+      maxTokens: 4096,
     });
 
     const trimmed = text.trim();
