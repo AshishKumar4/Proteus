@@ -151,6 +151,17 @@ const DDL = [
     created_at  INTEGER NOT NULL DEFAULT 0,
     updated_at  INTEGER NOT NULL DEFAULT 0
   )`,
+
+  // ── Executor output log ────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS executor_output (
+    id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(9)))),
+    executor   TEXT NOT NULL,
+    command    TEXT NOT NULL,
+    stdout     TEXT,
+    stderr     TEXT,
+    exit_code  INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+  )`,
 ];
 
 /** Initialize all agent tables. Idempotent — safe to call on every startup. */

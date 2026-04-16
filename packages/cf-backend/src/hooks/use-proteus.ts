@@ -53,6 +53,8 @@ export function useProteus(agentId?: string) {
   const [memoryContent, setMemoryContent] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [executors, setExecutors] = useState<Array<{ name: string; kind: string; capabilities: string[]; available: boolean }>>([]);
+  const [executorOutputs, setExecutorOutputs] = useState<Map<string, Array<{ id: string; command: string; stdout: string; stderr: string; exit_code: number; created_at: number }>>>(new Map());
 
   const addLog = useCallback((type: LogEntry["type"], message: string, detail?: string) => {
     setLogs(prev => [...prev.slice(-99), { id: crypto.randomUUID(), time: Date.now(), type, message, detail }]);
@@ -255,6 +257,25 @@ export function useProteus(agentId?: string) {
         setEvolutionEvents((events as EvolutionEventRow[]).reverse()); // oldest first for timeline
       })
       .catch(() => {});
+
+    // Executors
+    agent.call("getExecutors", [])
+      .then((list) => {
+        setExecutors(list as Array<{ name: string; kind: string; capabilities: string[]; available: boolean }>);
+        // Load output history for each executor
+        for (const exec of list as Array<{ name: string }>) {
+          agent.call("getExecutorOutput", [exec.name, 50])
+            .then((rows) => {
+              setExecutorOutputs(prev => {
+                const next = new Map(prev);
+                next.set(exec.name, (rows as Array<{ id: string; command: string; stdout: string; stderr: string; exit_code: number; created_at: number }>).reverse());
+                return next;
+              });
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -315,6 +336,54 @@ export function useProteus(agentId?: string) {
     }).catch(() => {});
   }, [agent]);
 
+  const executeInExecutor = useCallback((executorId: string, command: string) => {
+    return agent.call("executeInExecutor", [executorId, command])
+      .then((result) => {
+        const r = result as { stdout?: string; stderr?: string; exitCode?: number; error?: string };
+        // Append to local output immediately (broadcast will also arrive)
+        setExecutorOutputs(prev => {
+          const next = new Map(prev);
+          const existing = next.get(executorId) ?? [];
+          next.set(executorId, [...existing, {
+            id: crypto.randomUUID(), command,
+            stdout: r.stdout ?? '', stderr: r.stderr ?? r.error ?? '',
+            exit_code: r.exitCode ?? (r.error ? 1 : 0),
+            created_at: Date.now(),
+          }]);
+          return next;
+        });
+        return r;
+      });
+  }, [agent]);
+
+  // Listen for executor-output broadcasts
+  useEffect(() => {
+    if (!isConnected) return;
+    const ws = (agent as unknown as { _ws?: WebSocket })._ws;
+    if (!ws) return;
+    const handler = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(typeof event.data === 'string' ? event.data : '');
+        if (msg.type === 'executor-output') {
+          setExecutorOutputs(prev => {
+            const next = new Map(prev);
+            const existing = next.get(msg.executor) ?? [];
+            // Deduplicate by checking if we already have this command at this timestamp
+            if (existing.some(e => e.command === msg.command && Math.abs(e.created_at - msg.timestamp) < 500)) return prev;
+            next.set(msg.executor, [...existing, {
+              id: crypto.randomUUID(), command: msg.command,
+              stdout: msg.stdout ?? '', stderr: msg.stderr ?? '',
+              exit_code: msg.exitCode ?? 0, created_at: msg.timestamp,
+            }]);
+            return next;
+          });
+        }
+      } catch { /* ignore non-JSON */ }
+    };
+    ws.addEventListener('message', handler);
+    return () => ws.removeEventListener('message', handler);
+  }, [isConnected, agent]);
+
   return {
     messages,
     isStreaming,
@@ -334,6 +403,9 @@ export function useProteus(agentId?: string) {
     refreshTools: () => loadAllData(),
     clearHistory,
     setModel,
+    executors,
+    executorOutputs,
+    executeInExecutor,
     rpc: agent.call.bind(agent),
     rawAgent: agent,
   };
