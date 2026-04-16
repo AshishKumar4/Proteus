@@ -60,7 +60,7 @@ export default function SettingsPage() {
           </div>
         </Card>
         <button onClick={handleSave} disabled={saving || state.connectionStatus !== "connected"}
-          className="p-gradient-btn rounded-lg px-5 py-2.5 text-sm font-medium flex items-center gap-2 cursor-pointer">
+          className="p-send-btn rounded-lg px-5 py-2.5 text-sm font-medium flex items-center gap-2 cursor-pointer">
           {saving ? <Loader size="sm" /> : saved ? <CheckIcon size={16} /> : <FloppyDiskIcon size={16} />}
           {saving ? "Saving..." : saved ? "Saved" : "Save Settings"}
         </button>
