@@ -94,4 +94,42 @@ describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
     });
     expect(result.result).toBe('object,object');
   });
+
+  test('crafted tools become bare callables under codemode.<name> — matches prompt contract', async () => {
+    // Regression gate: the fallback path must unwrap `{description, execute}`
+    // the same way codemode's extractFns does, so `codemode.foo(args)` (per
+    // the system prompt) works verbatim — not `codemode.foo.execute(args)`.
+    const { rt } = createTestRuntime();
+    rt.storage.execRaw(`CREATE TABLE IF NOT EXISTS craft_scores (
+      tool_name TEXT PRIMARY KEY, score REAL NOT NULL DEFAULT 0.5,
+      uses INTEGER NOT NULL DEFAULT 0, last_used_at INTEGER NOT NULL DEFAULT 0
+    )`);
+    rt.craftStore.create({
+      name: 'double', description: 'doubles a number', params: null,
+      code: 'async (x) => x * 2', scope: 'local',
+    });
+
+    const t = tools(rt);
+    const tool = t.execute_tools as { execute: (a: { code: string }) => Promise<{ result: unknown }> };
+    const result = await tool.execute({ code: 'return await codemode.double(21);' });
+    expect(result.result).toBe(42);
+  });
+
+  test('low-scoring crafted tools filtered out of codemode namespace', async () => {
+    const { rt } = createTestRuntime();
+    rt.storage.execRaw(`CREATE TABLE IF NOT EXISTS craft_scores (
+      tool_name TEXT PRIMARY KEY, score REAL NOT NULL DEFAULT 0.5,
+      uses INTEGER NOT NULL DEFAULT 0, last_used_at INTEGER NOT NULL DEFAULT 0
+    )`);
+    rt.craftStore.create({
+      name: 'weak', description: 'low quality', params: null,
+      code: 'async () => "should never run"', scope: 'local',
+    });
+    rt.storage.sql`INSERT INTO craft_scores (tool_name, score, last_used_at) VALUES ('weak', 0.01, ${Date.now()})`;
+
+    const t = tools(rt);
+    const tool = t.execute_tools as { execute: (a: { code: string }) => Promise<{ result: unknown }> };
+    const result = await tool.execute({ code: 'return typeof codemode.weak;' });
+    expect(result.result).toBe('undefined');
+  });
 });

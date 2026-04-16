@@ -164,9 +164,16 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
               return 'Note saved.';
             },
           };
-          // Also expose crafted tools as a flat `codemode` proxy in the fallback
-          // so scripts written for the real sandbox keep working.
-          const codemode = craftedToolSet;
+          // Expose crafted tools under the `codemode` global to mirror the real
+          // codemode sandbox (see @cloudflare/codemode/dist/ai.js:163-178, which
+          // unwraps .execute via extractFns before exposing). Without this
+          // unwrap, the fallback would hand the sandbox `{description, execute}`
+          // objects — making `codemode.<name>(args)` throw — which contradicts
+          // the system prompt.
+          const codemode: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
+          for (const [name, handle] of Object.entries(craftedToolSet)) {
+            codemode[name] = handle.execute;
+          }
           const fn = new Function(
             'workspace',
             'codemode',
