@@ -1,0 +1,16 @@
+{
+  "name": "@proteus/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "proteus": "./bin/cli.ts"
+  },
+  "dependencies": {
+    "@proteus/core": "workspace:*",
+    "@proteus/cli-backend": "workspace:*",
+    "react": "^19.2.5"
+  },
+  "scripts": {
+    "start": "bun run bin/cli.ts"
+  }
+}

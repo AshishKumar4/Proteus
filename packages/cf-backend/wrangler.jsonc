@@ -1,0 +1,36 @@
+{
+  "name": "proteus",
+  "account_id": "f44999d1ddda7012e9a87729eba250f1",
+  "workers_dev": true,
+  "main": "src/server.ts",
+  "compatibility_date": "2026-01-28",
+  "compatibility_flags": ["nodejs_compat", "experimental"],
+  "worker_loaders": [{ "binding": "LOADER" }],
+  "routes": [
+    { "pattern": "proteus.ashishkumarsingh.com/*", "zone_id": "6fe16a3a25c46bb975b15e75ea57a0fe" }
+  ],
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/agents/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "class_name": "OrchestratorAgent", "name": "OrchestratorAgent" },
+      { "class_name": "ExplorationAgent", "name": "ExplorationAgent" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["OrchestratorAgent", "ExplorationAgent"]
+    }
+  ],
+  // AI_GATEWAY_AUTH is a Wrangler secret — set via:
+  //   echo "<your-token>" | npx wrangler secret put AI_GATEWAY_AUTH
+  // For local dev, add to .dev.vars:
+  //   AI_GATEWAY_AUTH=Bearer <your-token>
+  "vars": {
+    "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/fc895c5670cff9268b310a6a86bb6c35/orange-build-gateway/workers-ai/v1"
+  }
+}
