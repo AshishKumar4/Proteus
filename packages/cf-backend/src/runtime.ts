@@ -264,11 +264,13 @@ function createInlineBranch(agent: Think<Env>): BranchHandle {
         `${m.role}: ${m.content}`).join("\n").slice(-800);
       const result = await generateText({
         model: getModel(),
-        system: "You are an expert exploring one approach to solve a task.",
-        messages: [{ role: "user" as const, content: `Context:\n${context}\n\nPropose ONE approach in 2-3 sentences.` }],
+        system: "You are an expert exploring one approach to solve a task.\nIf your approach involves code, include it in a ```js code block.",
+        messages: [{ role: "user" as const, content: `Context:\n${context}\n\nPropose ONE approach. Include code if applicable.` }],
         maxOutputTokens: 512,
       });
-      return { text: result.text.trim(), codeUsed: null };
+      const text = result.text.trim();
+      const codeMatch = text.match(/```(?:js|javascript|typescript|ts)?\n([\s\S]*?)```/);
+      return { text, codeUsed: codeMatch?.[1]?.trim() ?? null };
     },
     evaluate: async (task) => {
       const result = await generateText({

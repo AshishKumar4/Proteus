@@ -30,6 +30,7 @@ import { DEFAULT_EVOLUTION_CONFIG } from './types.js';
 import { isoDate } from '../utils/date.js';
 import { upsertCraftedTool } from '../craft/conflict.js';
 import { periodicCraftConsolidation } from '../craft/consolidation.js';
+import { updateCraftScores } from '../craft/ema.js';
 import { modifyScaffold } from '../scaffold/modify.js';
 import { runMCTS } from '../mcts/engine.js';
 
@@ -82,6 +83,26 @@ export class EvolutionEngine {
 
     // Assess quality: use the judge model if available, else heuristic
     const quality = await this.assessTurnQuality(turn);
+
+    // Update EMA scores for any crafted tools that were used in this turn.
+    // This was previously dead code — updateCraftScores was never called.
+    const craftedToolNames = turn.toolCalls
+      .map(tc => tc.name)
+      .filter(name => {
+        const builtIns = new Set([
+          'search_memory', 'read_file', 'write_file', 'execute_code',
+          'save_note', 'list_tools', 'shell_exec', 'explore',
+          'read', 'write', 'edit', 'list', 'find', 'grep', 'delete',
+        ]);
+        return !builtIns.has(name);
+      });
+    if (craftedToolNames.length > 0) {
+      try {
+        updateCraftScores(this.rt.storage.sql, craftedToolNames, quality);
+      } catch {
+        // Score update failure is non-fatal
+      }
+    }
 
     // Low quality → generate reflection and store in memory
     if (quality < this.config.turnReflectionThreshold || turn.hadError) {

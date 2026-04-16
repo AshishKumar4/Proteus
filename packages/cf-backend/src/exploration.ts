@@ -58,14 +58,18 @@ export class ExplorationAgent extends Agent<Env> {
 
     const { text } = await generateText({
       model,
-      system: "You are an expert agent exploring one approach to solve a task." + toolHints,
-      messages: [{ role: "user" as const, content: `Prior context:\n${context}\n\nPropose ONE specific concrete approach in 2-3 sentences.` }],
+      system: "You are an expert agent exploring one approach to solve a task." + toolHints +
+        "\n\nIf your approach involves code, include it in a ```js code block.",
+      messages: [{ role: "user" as const, content: `Prior context:\n${context}\n\nPropose ONE specific concrete approach. Include a code implementation if applicable.` }],
       maxTokens: 4096,
     });
 
     const trimmed = text.trim();
-    this.sql`INSERT INTO traces (step, text, code_used) VALUES (1, ${trimmed}, ${null})`;
-    return { text: trimmed, codeUsed: null };
+    // Extract code from markdown code blocks if present
+    const codeMatch = trimmed.match(/```(?:js|javascript|typescript|ts)?\n([\s\S]*?)```/);
+    const codeUsed = codeMatch?.[1]?.trim() ?? null;
+    this.sql`INSERT INTO traces (step, text, code_used) VALUES (1, ${trimmed}, ${codeUsed})`;
+    return { text: trimmed, codeUsed };
   }
 
   @callable()

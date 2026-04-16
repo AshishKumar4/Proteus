@@ -133,8 +133,29 @@ function loadCraftedTools(rt: AgentRuntime): ToolSet {
     return tools;
   }
 
+  // Filter by effective score — tools below threshold are not loaded.
+  // Previously, ALL crafted tools were loaded regardless of score.
+  const minScore = 0.2; // DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection
+  const now = Date.now();
+  const scores = new Map<string, { score: number; lastUsedAt: number }>();
+  try {
+    const rows = rt.storage.sql<{ tool_name: string; score: number; last_used_at: number }>`
+      SELECT tool_name, score, last_used_at FROM craft_scores`;
+    for (const r of rows) scores.set(r.tool_name, { score: r.score, lastUsedAt: r.last_used_at });
+  } catch {
+    // craft_scores table may not exist yet; load all tools
+  }
+
   for (const ct of crafted) {
     if (!ct.code || ct.code.startsWith('//')) continue;
+
+    // Skip tools with effective score below threshold
+    const scoreEntry = scores.get(ct.name);
+    if (scoreEntry) {
+      const daysSince = (now - scoreEntry.lastUsedAt) / 86_400_000;
+      const effective = scoreEntry.score * Math.pow(0.5, daysSince / 30);
+      if (effective < minScore) continue;
+    }
 
     const defaultSchema = {
       type: 'object' as const,
