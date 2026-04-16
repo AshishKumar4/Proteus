@@ -1,0 +1,42 @@
+name: Lean 4 Verification
+
+on:
+  push:
+    paths:
+      - 'lean/**'
+  pull_request:
+    paths:
+      - 'lean/**'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y
+          echo "$HOME/.elan/bin" >> $GITHUB_PATH
+
+      - name: Cache Lean toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: lean-${{ hashFiles('lean/lean-toolchain') }}
+
+      - name: Build and verify
+        working-directory: lean
+        run: lake build
+
+      - name: Check for sorry
+        working-directory: lean
+        run: |
+          SORRIES=$(grep -rn '\bsorry\b' Proteus/ --include='*.lean' | grep -v '^\-\-' | grep -v '0 sorry' | wc -l)
+          echo "Sorries found: $SORRIES"
+          if [ "$SORRIES" -gt 0 ]; then
+            echo "::error::Found $SORRIES sorry in proofs"
+            grep -rn '\bsorry\b' Proteus/ --include='*.lean' | grep -v '^\-\-' | grep -v '0 sorry'
+            exit 1
+          fi
+          echo "All proofs verified."
