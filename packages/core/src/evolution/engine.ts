@@ -223,6 +223,7 @@ export class EvolutionEngine {
       const result = await runMCTS(this.rt, writer, task, {
         budget: this.config.lifetimeMCTSBudget,
         branches: this.config.lifetimeMCTSBranches,
+        onIterationComplete: this.config.onMctsProgress,
       });
 
       this.emit({
