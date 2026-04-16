@@ -40,8 +40,8 @@ const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
 const SESSION_REFLECTION_INTERVAL = 5; // turns between session reflections
 
 const AVAILABLE_MODELS = [
-  { id: "@cf/moonshotai/kimi-k2.5", name: "Kimi K2.5", description: "Reasoning model, slow but smart" },
-  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout", description: "Fast, good for quick tasks" },
+  { id: "@cf/moonshotai/kimi-k2.5", name: "Kimi K2.5", description: "Advanced reasoning model with extended thinking" },
+  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout 17B", description: "General-purpose instruction model" },
 ] as const;
 
 export class OrchestratorAgent extends Think<Env> {
