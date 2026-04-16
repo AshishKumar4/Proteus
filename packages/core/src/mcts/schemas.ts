@@ -3,6 +3,11 @@
  *
  * BUG-1 FIX: value defaults to 0, NOT 0.5.
  * Formal spec: Backpropagation.lean proves initial_valid requires value=0.
+ *
+ * NOTE: This DDL must stay in sync with packages/core/src/identity/schema.ts
+ * (the unified schema). Both are safe to run because of IF NOT EXISTS. The
+ * duplicate exists so subsystems (MCTS engine, CLI) can self-initialize
+ * without requiring the full unified schema init.
  */
 
 import type { RawSqlExec } from '../types/primitives.js';
