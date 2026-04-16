@@ -47,7 +47,7 @@ tests/          E2E tests (run from repo root)
 
 | Directory    | Purpose                                                 |
 |-------------|----------------------------------------------------------|
-| identity/   | Agent creation, reopening, soul (immutable purpose), DDL |
+| identity/   | Agent creation, reopening, soul (user-editable purpose), DDL |
 | evolution/  | 3-timescale auto-evolution engine, tool building         |
 | mcts/       | Monte Carlo Tree Search — UCT, backprop, convergence     |
 | scaffold/   | Agentic loop versioning — bootstrap, modify, rollback    |
@@ -108,7 +108,7 @@ available bindings. `getProviders()` filters to available-only for `createExecut
 
 ## Architecture Invariants
 
-- The agent_soul table is immutable — write once at creation, never modify
+- The agent_soul table holds a single-row purpose; user-editable via the Settings page (`setSoul` @callable RPC). Written at genesis and may be updated by the agent owner; not modified by the agent itself
 - agent_identity holds a single row with stable UUID
 - Scaffold is versioned in VFS (`scaffold/agent.js`) + `scaffold_versions` table
 - Memory lives in VFS under `memory/` prefix
