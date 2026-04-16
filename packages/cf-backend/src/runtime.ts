@@ -1,7 +1,7 @@
 /**
  * CF runtime adapter — bridges Think's DO context to core's AgentRuntime.
  *
- * Uses Seal's agent-utils for storage (pure DO SQLite — no R2, no @cloudflare/shell):
+ * Uses agent-utils for storage (pure DO SQLite — no R2, no @cloudflare/shell):
  *   VFS      → SqliteFS (vfs_files table with chunked storage)
  *   Memory   → MemoryStore (FTS5-indexed markdown chunks)
  *   CraftStore → CraftStore (FTS5-indexed tool storage)
