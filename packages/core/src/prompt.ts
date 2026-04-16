@@ -47,10 +47,15 @@ function renderBuiltinToolsSection(): string {
   }).join('\n');
 }
 
-export async function buildSystemPrompt(
+/**
+ * Synchronous form. CF's Think.getSystemPrompt returns string synchronously
+ * and this runtime's sql executor is also synchronous, so no I/O barrier
+ * exists — expose a sync form so CF doesn't need an await hack.
+ */
+export function buildSystemPromptSync(
   rt: AgentRuntime,
   opts: SystemPromptOptions = {},
-): Promise<string> {
+): string {
   let purpose = opts.purposeOverride;
   if (!purpose) {
     try {
@@ -81,4 +86,12 @@ After each turn the system scores tool usage, extracts successful patterns into
 new crafted tools, and (every few turns) reflects on the session. Your surface
 improves automatically — good patterns become reusable \`codemode.*\` functions.
 ${knowledgeSection}`;
+}
+
+/** Async wrapper for symmetry with other core builders; CLI uses either form. */
+export async function buildSystemPrompt(
+  rt: AgentRuntime,
+  opts: SystemPromptOptions = {},
+): Promise<string> {
+  return buildSystemPromptSync(rt, opts);
 }

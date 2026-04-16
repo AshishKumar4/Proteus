@@ -1,8 +1,8 @@
 /**
  * OrchestratorAgent — self-evolving chat agent extending Think.
  *
- * 5-tool architecture:
- *   execute_tools  — codemode sandbox with workspace.* + tools.* (crafted) APIs
+ * 5-tool architecture (all tool construction lives in @proteus/core/tools):
+ *   execute_tools  — codemode sandbox with workspace.* + codemode.* (crafted) APIs
  *   run            — POSIX shell command with optional executor routing
  *   explore        — MCTS tree search via durable fiber
  *   save_note      — append to MEMORY.md (FTS-indexed)
@@ -10,17 +10,18 @@
  *
  * All filesystem operations (read, write, edit, grep, find, etc.) are available
  * as workspace.* APIs inside the execute_tools codemode sandbox. Crafted tools
- * from the CraftStore are injected as tools.* inside the sandbox.
+ * from the CraftStore are injected as codemode.* inside the sandbox.
+ *
+ * This file is a THIN ADAPTER: tool factory, system prompt, and crafted-tool
+ * injection all live in @proteus/core so the CLI surface shares them verbatim.
+ * See docs/V2-MIGRATION.md for the drift-elimination rationale.
  */
 
 import { callable } from "agents";
 import { Think, Session } from "@cloudflare/think";
 import { createExecuteTool } from "@cloudflare/think/tools/execute";
 import { createWorkersAI } from "workers-ai-provider";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { tool, jsonSchema } from "ai";
 import type { LanguageModel, ToolSet } from "ai";
-// tool + jsonSchema still used by explore tool
 import type {
   TurnContext, TurnConfig, ChatResponseResult,
   ToolCallResultContext, StepContext, ChunkContext,
@@ -30,11 +31,17 @@ import {
   bootstrapScaffold,
   initAllTables, initSearchTables, initScaffoldTables, initCraftScoreTables,
   resolveMaxSteps,
+  // v2.0 canonical tool + prompt surface — single source of truth
+  buildBuiltinTools,
+  buildSystemPromptSync,
+  createChatModel,
+  BUILTIN_TOOLS,
+  BUILTIN_TOOL_DESCRIPTIONS,
+  ACTIVE_TOOLS,
   type CompletedTurn, type ToolCallRecord, type AgentRuntime,
   type SessionWriter, type SessionMessage,
 } from "@proteus/core";
 import { createCFRuntime, type CFRuntime } from "./runtime.js";
-import { createShell } from "@proteus/agent-utils/shell";
 
 const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
 const SESSION_REFLECTION_INTERVAL = 5; // turns between session reflections
@@ -105,19 +112,24 @@ export class OrchestratorAgent extends Think<Env> {
   private createModel(modelId: string): LanguageModel {
     const env = this.env as Env & Record<string, string>;
     if (env.AI && typeof env.AI !== "string") {
-      return createWorkersAI({ binding: env.AI })(modelId, {
+      const binding = env.AI as unknown as Parameters<typeof createWorkersAI>[0]["binding"];
+      const factory = createWorkersAI({ binding });
+      return createChatModel({
+        kind: "workers-ai",
+        modelId,
         sessionAffinity: this.sessionAffinity,
+        factory: (id, opts) => factory(id, opts) as LanguageModel,
       });
     }
     const gatewayUrl = env.AI_GATEWAY_URL;
     const gatewayAuth = env.AI_GATEWAY_AUTH;
     if (gatewayUrl && gatewayAuth) {
-      // /workers-ai/v1 endpoint — model IDs used as-is (no prefix needed)
-      return createOpenAICompatible({
-        name: "workers-ai",
+      return createChatModel({
+        kind: "ai-gateway",
         baseURL: gatewayUrl,
-        headers: { "Authorization": gatewayAuth },
-      }).chatModel(modelId);
+        auth: gatewayAuth,
+        modelId,
+      });
     }
     throw new Error("No AI model configured.");
   }
@@ -130,71 +142,49 @@ export class OrchestratorAgent extends Think<Env> {
     return model;
   }
 
+  /**
+   * Delegates to @proteus/core's canonical prompt builder (F1 fix: documents
+   * `codemode.*` — the real namespace crafted tools land in — instead of the
+   * former `tools.*` lie). Cached across turns; invalidated when the soul
+   * text or the registered executor set changes.
+   */
+  private _cachedSystemPrompt: string | null = null;
+  private _cachedSystemPromptKey: string = "";
+
   getSystemPrompt(): string {
     this.logActivity("getsystemprompt_start");
-    try {
-      const rows = this.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`;
-      const purpose = rows[0]?.purpose ?? "You are a helpful coding assistant.";
-
-      const prompt = `${purpose}
-
-## Tools (5 tools)
-
-### execute_tools
-Write JavaScript to accomplish tasks. Your code runs in a sandboxed Worker with these APIs:
-
-**workspace.*** — file and shell operations on your persistent virtual filesystem:
-  workspace.readFile(path) → string
-  workspace.writeFile(path, content) → "ok"
-  workspace.readdir(path) → string[]
-  workspace.exists(path) → boolean
-  workspace.exec(command) → string — POSIX shell (cat, grep, find, sed, ls, head, tail, wc, mkdir, rm, cp, mv)
-  workspace.searchMemory(query) → results
-  workspace.saveNote(content) → "ok"
-  workspace.listTools() → tool list
-  workspace.createTool(name, description, code) → "ok"
-
-**tools.*** — your learned tools from the CraftStore (improves over time):
-  tools.<name>(args) — call any crafted tool by name
-
-Use Promise.all for parallel operations. Return a value to see the result.
-
-### run
-Run a shell command directly: run({ command: "ls -la" })
-Supports: cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq.
-Pipes (|) and redirects (>, >>) work. Pass executor to target nimbus/sandbox.
-
-### explore
-MCTS tree search for complex subproblems. Use for architecture decisions or multi-step problem solving.
-
-### save_note
-Save a note to long-term memory (FTS-indexed). Quick persist — no code needed.
-
-### search_memory
-Full-text search over long-term memory. Quick recall — no code needed.
-
-## Evolution
-Your capabilities improve automatically via CraftStore — good patterns become tools.* APIs inside execute_tools.
-Summarize what you did after using tools.`;
-      this.logActivity("getsystemprompt_end", `${prompt.length} chars`);
-      return prompt;
-    } catch {
-      this.logActivity("getsystemprompt_end", "fallback");
-      return "You are a helpful coding assistant.";
+    const execs = (this.rt.executionRouter?.listExecutors() ?? []).map(e => e.name);
+    const key = `${this.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`[0]?.purpose ?? ""}\u0000${execs.join(",")}`;
+    if (this._cachedSystemPrompt && this._cachedSystemPromptKey === key) {
+      this.logActivity("getsystemprompt_end", "cache hit");
+      return this._cachedSystemPrompt;
     }
+    const prompt = buildSystemPromptSync(this.rt, { registeredExecutors: execs });
+    this._cachedSystemPrompt = prompt;
+    this._cachedSystemPromptKey = key;
+    this.logActivity("getsystemprompt_end", `${prompt.length} chars`);
+    return prompt;
   }
 
   /**
-   * Compute a lightweight cache key from CraftStore state.
-   * Uses count + max(updated_at) — two fast indexed queries on SQLite.
-   * Returns "" if CraftStore is unavailable.
+   * Compute a lightweight cache key from CraftStore + score state.
+   * Includes craft_scores.MAX(last_used_at) because effective-score filtering
+   * depends on recency — without it, the cached ToolSet would keep re-using a
+   * stale score-filtered view across turns even as usage shifts.
    */
   private _craftCacheKey(): string {
     try {
-      const rows = this.sql<{ cnt: number; latest: number }>`
+      const craft = this.sql<{ cnt: number; latest: number }>`
         SELECT COUNT(*) as cnt, COALESCE(MAX(updated_at), 0) as latest FROM crafted_tools`;
-      const { cnt, latest } = rows[0] ?? { cnt: 0, latest: 0 };
-      return `${cnt}:${latest}`;
+      const scores = (() => {
+        try {
+          return this.sql<{ lastUsed: number }>`
+            SELECT COALESCE(MAX(last_used_at), 0) as lastUsed FROM craft_scores`;
+        } catch { return [{ lastUsed: 0 }]; }
+      })();
+      const { cnt, latest } = craft[0] ?? { cnt: 0, latest: 0 };
+      const lastUsed = scores[0]?.lastUsed ?? 0;
+      return `${cnt}:${latest}:${lastUsed}`;
     } catch { return ""; }
   }
 
@@ -204,7 +194,8 @@ Summarize what you did after using tools.`;
     this._turnT0 = performance.now();
     this.logActivity("gettools_start");
 
-    // Fast path: return cached tools if CraftStore hasn't changed
+    // Cache key includes CraftStore updated_at AND craft_scores last_used_at
+    // because effective-score filtering depends on recency (v2: F5 fix).
     const cacheKey = this._craftCacheKey();
     if (this._cachedTools && cacheKey === this._cachedToolsKey) {
       this.logActivity("gettools_end", "cache hit");
@@ -213,199 +204,46 @@ Summarize what you did after using tools.`;
     this.logActivity("gettools_rebuilding", `${this._cachedToolsKey} → ${cacheKey}`);
 
     try {
-    const orchestrator = this;
-    const env = this.env as Env & Record<string, unknown>;
-    const tools: ToolSet = {};
+      const env = this.env as Env & Record<string, unknown>;
+      const orchestrator = this;
 
-    const router = this.rt.executionRouter;
-    const memory = this.rt.memory;
-    const craftStore = this.rt.craftStore;
-    const shell = createShell(this.rt.sqliteFS);
-
-    // ── 1. execute_tools: codemode sandbox with workspace.* + tools.* ──
-    if (env.LOADER) {
-      try {
-        const providers = router?.getProviders() ?? [];
-
-        // Inject crafted tools so they're callable as tools.* inside codemode
-        const craftedToolSet: Record<string, { description: string; execute: Function }> = {};
-        try {
-          const crafted = craftStore.list();
-          for (const t of crafted) {
-            if (!t.code || t.code.startsWith("//")) continue;
+      // All 5 tools come from @proteus/core. CF-specific concerns are injected:
+      //   - codemodeLoader + createExecuteTool factory (real Worker sandbox)
+      //   - wrapExplore (durable runFiber with broadcast checkpoints)
+      //   - onMctsProgress (WebSocket push to React UI)
+      //   - createMctsSession (DO-backed writer for MCTS nodes)
+      //   - onExplorePhase (threads phase checkpoints into the active fiber's
+      //     ctx.stash so an interrupted explore can resume from its last known
+      //     phase — preserves the pre-refactor starting/running/completed stash
+      //     sequence).
+      type FiberCtx = { stash(data: unknown): void };
+      const activeFiberCtx: { current: FiberCtx | null } = { current: null };
+      const tools = buildBuiltinTools({
+        rt: this.rt,
+        engine: this.engine,
+        codemodeLoader: env.LOADER,
+        createExecuteTool: createExecuteTool as unknown as Parameters<typeof buildBuiltinTools>[0]["createExecuteTool"],
+        onMctsProgress: (phase, iteration, budget) => this.broadcastMctsProgress(phase, iteration, budget),
+        createMctsSession: () => this.createMCTSSession(),
+        onExplorePhase: (phase, task) => {
+          activeFiberCtx.current?.stash({ task, phase });
+        },
+        wrapExplore: (fn) => async (args) => {
+          return orchestrator.runFiber(`explore-${Date.now()}`, async (ctx) => {
+            activeFiberCtx.current = ctx;
             try {
-              craftedToolSet[t.name] = {
-                description: t.description || `Crafted tool: ${t.name}`,
-                execute: new Function("return " + t.code)(),
-              };
-            } catch (e) {
-              console.warn(`[proteus] Skipping broken crafted tool "${t.name}":`, (e as Error).message);
+              return await fn(args);
+            } finally {
+              activeFiberCtx.current = null;
             }
-          }
-        } catch { /* CraftStore may not be initialized yet */ }
-
-        tools.execute_tools = createExecuteTool({
-          tools: craftedToolSet,
-          providers,
-          loader: env.LOADER as WorkerLoader,
-        });
-      } catch (err) {
-        console.error("[proteus] createExecuteTool FAILED:", (err as Error).message, (err as Error).stack);
-      }
-    } else {
-      // Fallback: register a basic execute_tools that uses new Function()
-      const vfs = this.rt.storage.vfs;
-      tools.execute_tools = tool({
-        description: "Execute JavaScript code. Available APIs: workspace.readFile(path), workspace.writeFile(path, content), workspace.exec(command), workspace.searchMemory(query), workspace.saveNote(content). (Running in unsandboxed fallback mode.)",
-        inputSchema: jsonSchema<{ code: string }>({
-          type: "object",
-          properties: { code: { type: "string", description: "JavaScript code to execute" } },
-          required: ["code"],
-        }),
-        execute: async (args: { code: string }) => {
-          try {
-            const workspaceApi = {
-              readFile: async (path: string) => {
-                const content = await vfs.readFile(path, { encoding: "utf8" });
-                return content ?? `File not found: ${path}`;
-              },
-              writeFile: async (path: string, content: string) => {
-                await vfs.writeFile(path, content);
-                return `Written ${content.length} bytes to ${path}`;
-              },
-              exec: async (command: string) => {
-                const result = await shell.exec(command);
-                if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
-                return result.stdout || "(no output)";
-              },
-              readdir: async (path: string) => vfs.readdir(path),
-              exists: async (path: string) => vfs.exists(path),
-              searchMemory: async (query: string) => {
-                const results = await memory.search(query, 10);
-                return results.map(r => `[${r.path}] ${r.snippet}`).join("\n") || "No results.";
-              },
-              saveNote: async (content: string) => {
-                const ts = new Date().toISOString().split("T")[0];
-                await memory.append("memory/MEMORY.md", `\n### Note (${ts})\n${content}\n`);
-                await memory.index("memory/MEMORY.md");
-                return "Note saved.";
-              },
-            };
-            const fn = new Function("workspace", `return (async () => {\n${args.code}\n})()`);
-            const result = await fn(workspaceApi);
-            return { result: result === undefined ? "(no return value)" : result };
-          } catch (e) {
-            return { result: undefined, error: (e as Error).message };
-          }
+          });
         },
       });
-    }
 
-    // ── 2. run: shell command with optional executor routing ──
-    tools.run = tool({
-      description: "Run a shell command. Supports: cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq. Pipes and redirects work.",
-      inputSchema: jsonSchema<{ command: string; executor?: string }>({
-        type: "object",
-        properties: {
-          command: { type: "string", description: "Shell command to run" },
-          executor: { type: "string", description: "Target executor: workspace (default), nimbus, sandbox" },
-        },
-        required: ["command"],
-      }),
-      execute: async (args: { command: string; executor?: string }) => {
-        if (args.executor && args.executor !== "workspace") {
-          const exec = router?.getProvider(args.executor);
-          if (exec?.tools.exec) return exec.tools.exec.execute(args.command) as Promise<string>;
-          return `Executor "${args.executor}" not available.`;
-        }
-        const result = await shell.exec(args.command);
-        if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
-        return result.stdout || "(no output)";
-      },
-    });
-
-    // ── 3. explore: MCTS ──
-    tools.explore = tool({
-      description: "MCTS tree search for complex subproblems. Spawns branches, evaluates approaches, returns the best.",
-      inputSchema: jsonSchema<{ task: string; budget?: number }>({
-        type: "object",
-        properties: {
-          task: { type: "string", description: "The subproblem to explore" },
-          budget: { type: "number", description: "MCTS iterations (default: 5)" },
-        },
-        required: ["task"],
-      }),
-      execute: async (args: { task: string; budget?: number }) => {
-        console.log(`[proteus] explore called: task="${args.task.slice(0, 80)}", budget=${args.budget ?? "default"}`);
-        try {
-          return await orchestrator.runFiber(`explore-${Date.now()}`, async (ctx) => {
-            console.log("[proteus] explore fiber started");
-            ctx.stash({ task: args.task, phase: "starting" });
-            orchestrator.broadcastMctsProgress("explore-starting");
-            const session = orchestrator.createMCTSSession();
-            const { nanoid } = await import("@proteus/core");
-            await session.appendMessage(
-              { id: nanoid(), role: "user" as const, parts: [{ type: "text" as const, text: args.task }] },
-              null,
-            );
-            ctx.stash({ task: args.task, phase: "running" });
-            console.log("[proteus] explore: calling onLifetimeEvolution");
-            await orchestrator.engine.onLifetimeEvolution(session);
-            console.log("[proteus] explore: onLifetimeEvolution completed");
-            orchestrator.broadcastMctsProgress("explore-completed");
-            ctx.stash({ task: args.task, phase: "completed" });
-            const allNodes = orchestrator.sql<{ id: string; action: string; value: number; status: string }>`
-              SELECT id, action, value, status FROM search_nodes ORDER BY value DESC`;
-            console.log(`[proteus] explore: ${allNodes.length} search nodes found`);
-            const best = allNodes.find(n => n.status === "terminal") ?? allNodes[0];
-            if (best && best.action) {
-              return `Exploration complete (${allNodes.length} nodes). Best approach (score ${best.value.toFixed(2)}): ${best.action}`;
-            }
-            return `Exploration complete. ${allNodes.length} nodes explored. Check the MCTS tree for results.`;
-          });
-        } catch (err) {
-          console.error("[proteus] explore FAILED:", (err as Error).message, (err as Error).stack);
-          return `Exploration failed: ${(err as Error).message}`;
-        }
-      },
-    });
-
-    // ── 4. save_note: quick memory persist ──
-    tools.save_note = tool({
-      description: "Save a note to long-term memory (FTS-indexed for later search).",
-      inputSchema: jsonSchema<{ content: string }>({
-        type: "object",
-        properties: { content: { type: "string", description: "Note content" } },
-        required: ["content"],
-      }),
-      execute: async (args: { content: string }) => {
-        const ts = new Date().toISOString().split("T")[0];
-        await memory.append("memory/MEMORY.md", `\n### Note (${ts})\n${args.content}\n`);
-        await memory.index("memory/MEMORY.md");
-        return "Note saved to memory.";
-      },
-    });
-
-    // ── 5. search_memory: quick memory recall ──
-    tools.search_memory = tool({
-      description: "Full-text search over long-term memory. Returns matching passages.",
-      inputSchema: jsonSchema<{ query: string }>({
-        type: "object",
-        properties: { query: { type: "string", description: "Search query" } },
-        required: ["query"],
-      }),
-      execute: async (args: { query: string }) => {
-        const results = await memory.search(args.query, 10);
-        if (results.length === 0) return "No results found.";
-        return results.map(r => `[${r.path}:${r.startLine}-${r.endLine}] (score ${r.score.toFixed(2)})\n${r.snippet}`).join("\n\n");
-      },
-    });
-
-    // Cache the result for subsequent turns
-    this._cachedTools = tools;
-    this._cachedToolsKey = cacheKey;
-    this.logActivity("gettools_end", `rebuilt — ${Object.keys(tools).length} tools`);
-    return tools;
+      this._cachedTools = tools;
+      this._cachedToolsKey = cacheKey;
+      this.logActivity("gettools_end", `rebuilt — ${Object.keys(tools).length} tools`);
+      return tools;
     } catch (err) {
       console.error("[proteus] getTools() FAILED:", err);
       throw err;
@@ -429,11 +267,7 @@ Summarize what you did after using tools.`;
   // edit, list, find, grep, delete) with ours, bloating the request by ~2800 tokens.
   // activeTools restricts the model to only our 5 tools + session context tools,
   // preventing Think's workspace tools from being sent in the request payload.
-  private static readonly ACTIVE_TOOLS = [
-    "execute_tools", "run", "explore", "save_note", "search_memory",
-    "set_context", "load_context", "search_context",
-  ];
-
+  // ACTIVE_TOOLS is sourced from @proteus/core/tools/registry (single truth).
   beforeTurn(_ctx: TurnContext): TurnConfig | void {
     this._turnToolCalls = [];
     this._turnStepCount = 0;
@@ -441,7 +275,7 @@ Summarize what you did after using tools.`;
     this._turnHadError = false;
     this._firstChunkReceived = false;
     this.logActivity("beforeturn", "streamText() called next");
-    return { activeTools: OrchestratorAgent.ACTIVE_TOOLS };
+    return { activeTools: [...ACTIVE_TOOLS] };
   }
 
   onChunk(_ctx: ChunkContext): void {
@@ -521,9 +355,7 @@ Summarize what you did after using tools.`;
     }
 
     // Fire turn-level evolution in background (does NOT block the TurnQueue)
-    void this.engine.onTurnComplete(turn).catch(err =>
-      console.error("[proteus] onTurnComplete failed:", err)
-    );
+    this.engine.onTurnCompleteAsync(turn);
   }
 
   // FIX 6: Fiber recovery — log and document
@@ -641,7 +473,7 @@ Summarize what you did after using tools.`;
       };
     });
     return {
-      builtIn: ["execute_tools", "run", "explore", "save_note", "search_memory"],
+      builtIn: [...BUILTIN_TOOLS],
       crafted,
     };
   }
@@ -664,13 +496,12 @@ Summarize what you did after using tools.`;
   }
 
   @callable() async getToolDescriptions() {
-    const builtIn = [
-      { name: "execute_tools", description: "Write JS to accomplish tasks. workspace.* for files/shell, tools.* for learned patterns. Runs in sandboxed Worker." },
-      { name: "run", description: "Run a POSIX shell command (cat, grep, find, sed, ls, etc.). Optional executor param for nimbus/sandbox." },
-      { name: "explore", description: "MCTS tree search for complex subproblems. Spawns branches, evaluates, returns the best approach." },
-      { name: "save_note", description: "Save a note to long-term memory (MEMORY.md). FTS-indexed for later search." },
-      { name: "search_memory", description: "Search long-term memory using full-text search. Returns matching passages." },
-    ];
+    // Descriptions sourced from @proteus/core/tools/registry — single truth.
+    // Fixes F1 (tools.* → codemode.*) by virtue of the canonical source.
+    const builtIn = BUILTIN_TOOLS.map(name => ({
+      name,
+      description: BUILTIN_TOOL_DESCRIPTIONS[name],
+    }));
     const craftedRaw = this.rt.craftStore.list();
     const crafted = craftedRaw.map(t => {
       const scoreRow = this.sql<{ score: number; uses: number }>`

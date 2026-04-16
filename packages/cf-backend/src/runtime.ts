@@ -126,6 +126,7 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
     spawnBranch: createFacetSpawner(agent),
     abortBranch: createFacetAborter(agent),
     executionRouter,
+    shell,
     sqliteFS,
     sshExecutor,
   };
