@@ -171,8 +171,8 @@ function createDualPathLLM(agent: Think<Env>): LLM {
           : createOpenAICompatible({
               name: "workers-ai",
               baseURL: env.AI_GATEWAY_URL ?? "",
-              headers: { "cf-aig-authorization": env.AI_GATEWAY_AUTH ?? "" },
-            }).chatModel("@cf/moonshotai/kimi-k2.5");
+              headers: { "Authorization": env.AI_GATEWAY_AUTH ?? "" },
+            }).chatModel("workers-ai/@cf/moonshotai/kimi-k2.5");
         const result = await generateText({ model, prompt, maxOutputTokens: 512 });
         return result.text.trim();
       } catch { return "(reflection unavailable)"; }
@@ -255,8 +255,8 @@ function createInlineBranch(agent: Think<Env>): BranchHandle {
     : createOpenAICompatible({
         name: "workers-ai",
         baseURL: gatewayUrl,
-        headers: { "cf-aig-authorization": gatewayAuth },
-      }).chatModel("@cf/moonshotai/kimi-k2.5");
+        headers: { "Authorization": gatewayAuth },
+      }).chatModel("workers-ai/@cf/moonshotai/kimi-k2.5");
 
   return {
     explore: async (history, _tools) => {

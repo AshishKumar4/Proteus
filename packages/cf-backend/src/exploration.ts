@@ -25,11 +25,12 @@ export class ExplorationAgent extends Agent<Env> {
     if (env.AI && typeof env.AI !== "string") {
       return createWorkersAI({ binding: env.AI })(DEFAULT_MODEL);
     }
+    const compatModel = DEFAULT_MODEL.startsWith("workers-ai/") ? DEFAULT_MODEL : `workers-ai/${DEFAULT_MODEL}`;
     return createOpenAICompatible({
       name: "workers-ai",
       baseURL: env.AI_GATEWAY_URL ?? "",
-      headers: { "cf-aig-authorization": env.AI_GATEWAY_AUTH ?? "" },
-    }).chatModel(DEFAULT_MODEL);
+      headers: { "Authorization": env.AI_GATEWAY_AUTH ?? "" },
+    }).chatModel(compatModel);
   }
 
   async onStart() {

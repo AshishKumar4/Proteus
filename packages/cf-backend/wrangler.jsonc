@@ -31,6 +31,6 @@
   // For local dev, add to .dev.vars:
   //   AI_GATEWAY_AUTH=Bearer <your-token>
   "vars": {
-    "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/fc895c5670cff9268b310a6a86bb6c35/orange-build-gateway/workers-ai/v1"
+    "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/f44999d1ddda7012e9a87729eba250f1/proteus-ai-gateway/compat/chat/completions"
   }
 }
