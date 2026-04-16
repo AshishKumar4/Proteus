@@ -3,7 +3,7 @@
   "account_id": "f44999d1ddda7012e9a87729eba250f1",
   "workers_dev": true,
   "main": "src/server.ts",
-  "compatibility_date": "2026-01-28",
+  "compatibility_date": "2025-12-01",
   "compatibility_flags": ["nodejs_compat", "experimental"],
   "worker_loaders": [{ "binding": "LOADER" }],
   "routes": [
@@ -18,10 +18,19 @@
     "bindings": [
       { "class_name": "OrchestratorAgent", "name": "OrchestratorAgent" },
       { "class_name": "ExplorationAgent", "name": "ExplorationAgent" }
-      // To enable the Nimbus development environment executor, add:
-      // { "class_name": "NimbusSession", "name": "NIMBUS_SESSION", "script_name": "nimbus" }
-      // Requires deploying the Nimbus Worker (github.com/AshishKumar4/Nimbus)
-      // alongside Proteus. The executor will auto-detect the binding.
+      // Optional executor bindings — add to enable the matching UI tab.
+      // Without them, the executor shows in the "Not configured" footer.
+      //
+      // Nimbus (DO-based dev env: shell + node + npm + git via github.com/AshishKumar4/Nimbus)
+      //   { "class_name": "NimbusSession", "name": "NIMBUS_SESSION", "script_name": "nimbus" }
+      //
+      // Container (full Linux VM via @cloudflare/sandbox — requires a "containers"
+      // top-level block with a Dockerfile; see CF Containers docs)
+      //   { "class_name": "Sandbox", "name": "CONTAINER" }
+      //
+      // SSH/laptop (user's local machine via WebSocket tunnel):
+      //   No binding needed — users run `proteus-daemon` locally. The executor
+      //   becomes available when a tunnel WebSocket attaches at runtime.
     ]
   },
   "migrations": [
