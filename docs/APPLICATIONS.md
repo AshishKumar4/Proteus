@@ -189,7 +189,7 @@ graph TB
 | **Self-Refine** (Madaan 2023) | No | No | Iterative refinement | No | No |
 | **OMNI** (Zhang 2024) | Tool creation | No | Yes | No | No |
 | **Tree of Thoughts** (Yao 2023) | No | BFS/DFS | No | No | No |
-| **Proteus** | CraftStore + EMA | MCTS + Facets | Scaffold mutation | ~60 Lean 4 theorems (0 sorry) | DO SQLite |
+| **Proteus** | CraftStore + EMA | MCTS + Facets | Scaffold mutation | 75 Lean 4 theorems (8 sorry) | DO SQLite |
 
 ### What's Genuinely Novel
 

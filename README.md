@@ -41,7 +41,7 @@ graph TB
 - **CraftStore** — learns reusable tools from conversations. EMA scoring with time decay. FTS5-indexed for search.
 - **Mutable scaffold** — the agent's agentic loop is code it can rewrite, validated through 4 structural gates
 - **POSIX shell emulator** — 16 commands (ls, grep, find, sed, cat, etc.) over virtual filesystem. No real OS needed on Workers.
-- **Formally verified** — 25+ Lean 4 theorems covering capability safety, storage isolation, budget termination, backprop correctness
+- **Formally verified** — 75 Lean 4 theorems across 6 categories (Safety, MCTS, Evolution, Agent, Storage, Execution) covering capability safety, storage isolation, budget termination, and backprop correctness
 - **Portable** — same core runs on Cloudflare Workers (Think + DOs) or local CLI (bun:sqlite)
 
 ## Quick Start
