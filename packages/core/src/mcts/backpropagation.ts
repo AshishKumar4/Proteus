@@ -33,6 +33,8 @@ export function backpropagate(
   leafNodeId: string,
   reward: number,
 ): void {
+  // Clamp reward to [0, 1] — out-of-range values break UCT and convergence
+  reward = Math.max(0, Math.min(1, reward));
   sql`
     WITH RECURSIVE ancestors(id, depth) AS (
       SELECT id, 0 FROM search_nodes WHERE id = ${leafNodeId}

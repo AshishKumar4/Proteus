@@ -27,8 +27,17 @@ export async function maybeStoreCraftedTool(
   );
 
   try {
-    const m = generalized.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(m?.[0] ?? '{}');
+    // Find valid JSON by trying from each { position (handles nested braces in code field)
+    let parsed: { name?: string; description?: string; code?: string } = {};
+    const startIdx = generalized.indexOf('{');
+    if (startIdx >= 0) {
+      for (let end = generalized.length; end > startIdx; end--) {
+        if (generalized[end - 1] === '}') {
+          try { parsed = JSON.parse(generalized.slice(startIdx, end)); break; }
+          catch { continue; }
+        }
+      }
+    }
     if (!parsed.name || !parsed.code) return;
 
     await upsertCraftedTool(rt, {

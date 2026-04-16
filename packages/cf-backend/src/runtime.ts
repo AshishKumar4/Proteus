@@ -113,7 +113,7 @@ function adaptVFS(fs: SqliteFS): CoreVFS {
       } catch { return null; }
     },
     unlink: (path) => fs.unlink(path),
-    mkdir: (path) => fs.mkdir(path),
+    mkdir: (path, opts) => fs.mkdir(path, opts),
     exists: (path) => fs.exists(path),
   };
 }
@@ -161,8 +161,8 @@ function adaptCraftedTool(t: { name: string; description: string; params: Record
     params: t.params,
     code: t.code,
     scope: t.scope as CoreCraftedTool["scope"],
-    created_at: t.createdAt,
-    updated_at: t.updatedAt,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
   };
 }
 

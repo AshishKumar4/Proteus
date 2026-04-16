@@ -72,7 +72,7 @@ export async function converge(
   const winnerCode = rt.storage.sql<{ code_used: string | null }>`
     SELECT code_used FROM search_nodes WHERE id = ${winner.id}
   `[0]?.code_used;
-  if (winnerCode && winner.value > 0.6) {
+  if (winnerCode && winner.value > DEFAULT_CONFIG.mcts.craftExtractionThreshold) {
     try {
       await maybeStoreCraftedTool(rt, winnerCode, winner.value);
     } catch {

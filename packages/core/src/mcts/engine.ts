@@ -30,7 +30,7 @@ export async function runMCTS(
   config: MCTSConfig,
 ): Promise<ConvergenceResult> {
   const defaults = DEFAULT_CONFIG.mcts;
-  const N_BRANCHES = config.branches;
+  const N_BRANCHES = Math.max(1, config.branches);
   const maxDepth = config.maxDepth ?? defaults.maxDepth;
   const W = config.explorationWeight ?? defaults.explorationWeight;
   const pruneThreshold = config.pruneThreshold ?? defaults.pruneThreshold;
@@ -87,9 +87,12 @@ export async function runMCTS(
         : [{ role: 'user', content: task }];
       const craftedTools = rt.craftStore.getAll();
 
-      // EXPLORE — parallel LLM calls
-      const explorations = await Promise.all(
+      // EXPLORE — parallel LLM calls (allSettled: one branch failure doesn't kill the rest)
+      const explorationResults = await Promise.allSettled(
         branchHandles.map(handle => handle.explore(priorHistory, craftedTools)),
+      );
+      const explorations = explorationResults.map(r =>
+        r.status === 'fulfilled' ? r.value : { text: '', codeUsed: null },
       );
 
       // RECORD nodes
@@ -114,9 +117,12 @@ export async function runMCTS(
         `;
       }
 
-      // EVALUATE — cross-model judging
-      const scores = await Promise.all(
+      // EVALUATE — cross-model judging (allSettled: partial failures → score 0.5)
+      const scoreResults = await Promise.allSettled(
         branchHandles.map(handle => handle.evaluate(task)),
+      );
+      const scores = scoreResults.map(r =>
+        r.status === 'fulfilled' ? r.value : 0.5,
       );
 
       // BACKPROPAGATE

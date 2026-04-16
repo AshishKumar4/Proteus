@@ -10,6 +10,8 @@ import { tool, jsonSchema } from 'ai';
 import type { ToolSet } from 'ai';
 import type { AgentRuntime } from '../types/agent-runtime.js';
 import type { CraftedTool } from '../types/craft.js';
+import { effectiveScore } from '../craft/ema.js';
+import { DEFAULT_CONFIG } from '../config.js';
 
 /** Wrap an async tool function so it never throws — returns error string instead */
 function safe<T extends Record<string, unknown>>(
@@ -121,7 +123,8 @@ export function buildAgentTools(rt: AgentRuntime): ToolSet {
   };
 
   const crafted = loadCraftedTools(rt);
-  return { ...builtIn, ...crafted };
+  // Built-ins take priority — crafted tools cannot shadow them
+  return { ...crafted, ...builtIn };
 }
 
 function loadCraftedTools(rt: AgentRuntime): ToolSet {
@@ -134,8 +137,7 @@ function loadCraftedTools(rt: AgentRuntime): ToolSet {
   }
 
   // Filter by effective score — tools below threshold are not loaded.
-  // Previously, ALL crafted tools were loaded regardless of score.
-  const minScore = 0.2; // DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection
+  const minScore = DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection;
   const now = Date.now();
   const scores = new Map<string, { score: number; lastUsedAt: number }>();
   try {
@@ -149,11 +151,10 @@ function loadCraftedTools(rt: AgentRuntime): ToolSet {
   for (const ct of crafted) {
     if (!ct.code || ct.code.startsWith('//')) continue;
 
-    // Skip tools with effective score below threshold
+    // Skip tools with effective score below threshold (uses shared effectiveScore from ema.ts)
     const scoreEntry = scores.get(ct.name);
     if (scoreEntry) {
-      const daysSince = (now - scoreEntry.lastUsedAt) / 86_400_000;
-      const effective = scoreEntry.score * Math.pow(0.5, daysSince / 30);
+      const effective = effectiveScore(scoreEntry.score, scoreEntry.lastUsedAt, now);
       if (effective < minScore) continue;
     }
 
