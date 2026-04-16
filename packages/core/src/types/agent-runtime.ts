@@ -14,6 +14,7 @@ import type {
   Identity,
 } from './primitives.js';
 import type { CraftedTool, CraftScoreEntry } from './craft.js';
+import type { ExecutionRouter } from '../execution/types.js';
 
 /** CraftStore interface — matches seal/agent-utils CraftStore API */
 export interface CraftStore {
@@ -53,4 +54,10 @@ export interface AgentRuntime {
   /** Platform-specific branch spawning — injected by CF or CLI backend */
   spawnBranch: SpawnBranch;
   abortBranch: AbortBranch;
+  /**
+   * Multi-executor routing. Manages named executor providers (workspace,
+   * nimbus, sandbox, laptop) for the codemode sandbox. Optional — core
+   * code that doesn't need multi-executor support ignores this field.
+   */
+  executionRouter?: ExecutionRouter;
 }

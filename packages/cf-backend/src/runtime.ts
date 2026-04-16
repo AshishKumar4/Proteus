@@ -18,11 +18,13 @@ import type {
   SqlExecutor as CoreSqlExecutor, RawSqlExec,
   ExecuteResult, ResolvedProvider,
   CraftStore as CoreCraftStore, CraftedTool as CoreCraftedTool,
-  FiberCtx,
+  FiberCtx, ExecutionRouter,
 } from "@proteus/core";
+import { DefaultExecutionRouter, createInlineExecutor } from "@proteus/core";
 import { SqliteFS } from "@proteus/agent-utils/vfs";
 import { MemoryStore } from "@proteus/agent-utils/memory";
 import { CraftStore as AgentUtilsCraftStore } from "@proteus/agent-utils/stores";
+import { createShell } from "@proteus/agent-utils/shell";
 import type { SqlExecutor } from "@proteus/agent-utils";
 import { generateText } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
@@ -66,11 +68,20 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
   const schedule = createRealSchedule(agent);
   const identity = createIdentity(agent, vfs, sql as unknown as CoreSqlExecutor);
 
+  // Execution router — manages codemode providers (workspace, nimbus, sandbox, laptop)
+  const shell = createShell(sqliteFS);
+  const executionRouter: ExecutionRouter = new DefaultExecutionRouter();
+  executionRouter.register(createInlineExecutor({
+    vfs, memory, craftStore, shell,
+  }));
+  // nimbus/sandbox/laptop registered when bindings become available (see orchestrator)
+
   return {
     storage: { vfs, sql: sql as unknown as CoreSqlExecutor, execRaw },
     memory, executor, llm, schedule, identity, craftStore,
     spawnBranch: createFacetSpawner(agent),
     abortBranch: createFacetAborter(agent),
+    executionRouter,
     sqliteFS,
   };
 }

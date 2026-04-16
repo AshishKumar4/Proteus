@@ -66,6 +66,17 @@ export { maybeStoreCraftedTool } from './craft/discovery.js';
 export { periodicCraftConsolidation } from './craft/consolidation.js';
 export { checkConflictsBeforeAdding, upsertCraftedTool } from './craft/conflict.js';
 
+// Execution layer
+export {
+  DefaultExecutionRouter,
+  createInlineExecutor,
+  createNimbusExecutor,
+  createContainerExecutor,
+  createSSHTunnelExecutor,
+  type ExecutorCapability, type ExecutorKind, type ExecutorProvider,
+  type ExecutorInfo, type ExecutionRouter, type InlineExecutorDeps,
+} from './execution/index.js';
+
 // Utils
 export { nanoid } from './utils/nanoid.js';
 export { isoDate, today, nowMs } from './utils/date.js';

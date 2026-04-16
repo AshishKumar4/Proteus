@@ -25,20 +25,19 @@ import { createWorkersAI } from "workers-ai-provider";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { tool, jsonSchema } from "ai";
 import type { LanguageModel, ToolSet } from "ai";
+// tool + jsonSchema still used by explore tool
 import type {
   TurnContext, TurnConfig, ChatResponseResult,
   ToolCallResultContext, StepContext,
 } from "@cloudflare/think";
 import {
   EvolutionEngine,
-  buildAgentTools,
   bootstrapScaffold,
   initAllTables, initSearchTables, initScaffoldTables, initCraftScoreTables,
   resolveMaxSteps,
   type CompletedTurn, type ToolCallRecord, type AgentRuntime,
   type SessionWriter, type SessionMessage,
 } from "@proteus/core";
-import { createShell } from "@proteus/agent-utils/shell";
 import { createCFRuntime, type CFRuntime } from "./runtime.js";
 
 const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
@@ -121,11 +120,19 @@ export class OrchestratorAgent extends Think<Env> {
       const purpose = rows[0]?.purpose ?? "You are a helpful coding assistant.";
       return `${purpose}
 
-After using tools, summarize what you did.
-Use read/write/edit for file operations. Use list/find/grep to browse and search files.
-Use shell_exec for complex commands (pipes, redirects, sed, awk).
-Use save_note to remember important facts. Use search_memory to recall them.
-Use explore to deeply investigate a complex subproblem with MCTS.`;
+You have 2 tools: execute and explore.
+
+execute: Write JavaScript code that uses namespaced APIs:
+  workspace.readFile(path) — read a file
+  workspace.writeFile(path, content) — write a file
+  workspace.exec(command) — POSIX shell (cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv)
+  workspace.searchMemory(query) — FTS5 search over long-term memory
+  workspace.saveNote(content) — save a note to memory
+  workspace.listTools() — list available crafted tools
+
+explore: MCTS tree search for complex subproblems (architecture decisions, multi-step problem solving).
+
+After using tools, summarize what you did.`;
     } catch {
       return "You are a helpful coding assistant.";
     }
@@ -134,234 +141,77 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
   getTools(): ToolSet {
     console.log("[proteus] getTools() called");
     try {
-    // Start with core tools (search_memory, save_note, execute_code, list_tools)
-    const coreTools = buildAgentTools(this.rt);
-
-    // Remove old read_file/write_file — replaced by unified read/write below
-    delete coreTools.read_file;
-    delete coreTools.write_file;
-
-    // ── Unified filesystem tools ─────────────────────────────────
-    // These use the SAME names as Think's workspace tools (read, write, edit,
-    // list, find, grep, delete) so they overwrite Think's implementations.
-    // All backed by SqliteFS — one filesystem, zero confusion.
-
-    const vfs = this.rt.storage.vfs;
-    const shell = createShell(this.rt.sqliteFS);
-
-    const fsTools: ToolSet = {
-      read: tool({
-        description: "Read a file from the workspace. Returns content with line numbers. Use offset/limit for large files.",
-        inputSchema: jsonSchema<{ path: string; offset?: number; limit?: number }>({
-          type: "object",
-          properties: {
-            path: { type: "string", description: "File path to read" },
-            offset: { type: "number", description: "1-indexed line to start from" },
-            limit: { type: "number", description: "Max lines to return" },
-          },
-          required: ["path"],
-        }),
-        execute: async (args: { path: string; offset?: number; limit?: number }) => {
-          const content = await vfs.readFile(args.path, { encoding: "utf8" }) as string | null;
-          if (content === null) return `File not found: ${args.path}`;
-          const lines = content.split("\n");
-          const start = Math.max(0, (args.offset ?? 1) - 1);
-          const end = args.limit ? start + args.limit : lines.length;
-          return lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n") || "(empty file)";
-        },
-      }),
-
-      write: tool({
-        description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Parent directories are created automatically.",
-        inputSchema: jsonSchema<{ path: string; content: string }>({
-          type: "object",
-          properties: {
-            path: { type: "string", description: "File path" },
-            content: { type: "string", description: "Content to write" },
-          },
-          required: ["path", "content"],
-        }),
-        execute: async (args: { path: string; content: string }) => {
-          await vfs.writeFile(args.path, args.content);
-          // Auto-index memory files for FTS search
-          if (args.path.startsWith("memory/")) {
-            await this.rt.memory.index(args.path);
-          }
-          return `Written ${args.content.length} bytes to ${args.path}`;
-        },
-      }),
-
-      edit: tool({
-        description: "Make a targeted edit to a file by replacing an exact string match.",
-        inputSchema: jsonSchema<{ path: string; old_string: string; new_string: string }>({
-          type: "object",
-          properties: {
-            path: { type: "string", description: "File path to edit" },
-            old_string: { type: "string", description: "Exact text to find" },
-            new_string: { type: "string", description: "Replacement text" },
-          },
-          required: ["path", "old_string", "new_string"],
-        }),
-        execute: async (args: { path: string; old_string: string; new_string: string }) => {
-          if (!args.old_string) {
-            // Empty old_string = create new file
-            await vfs.writeFile(args.path, args.new_string);
-            return `Created ${args.path} (${args.new_string.length} bytes)`;
-          }
-          const content = await vfs.readFile(args.path, { encoding: "utf8" }) as string | null;
-          if (content === null) return `File not found: ${args.path}`;
-          if (!content.includes(args.old_string)) return `old_string not found in ${args.path}`;
-          const count = content.split(args.old_string).length - 1;
-          if (count > 1) return `Found ${count} matches — provide more context to identify the unique match`;
-          await vfs.writeFile(args.path, content.replace(args.old_string, args.new_string));
-          return `Edited ${args.path}`;
-        },
-      }),
-
-      list: tool({
-        description: "List files and directories at a path. Returns names and types.",
-        inputSchema: jsonSchema<{ path?: string }>({
-          type: "object",
-          properties: { path: { type: "string", description: "Directory path (default: /)" } },
-        }),
-        execute: async (args: { path?: string }) => {
-          const result = await shell.exec(`ls -la ${args.path || "/"}`);
-          return result.stdout || "(empty directory)";
-        },
-      }),
-
-      find: tool({
-        description: "Find files matching a glob pattern. Supports *, **, ? wildcards.",
-        inputSchema: jsonSchema<{ pattern: string }>({
-          type: "object",
-          properties: { pattern: { type: "string", description: 'Glob pattern (e.g. "**/*.ts")' } },
-          required: ["pattern"],
-        }),
-        execute: async (args: { pattern: string }) => {
-          const result = await shell.exec(`find / -name '${args.pattern}'`);
-          return result.stdout || "No files found.";
-        },
-      }),
-
-      grep: tool({
-        description: "Search file contents using a regex pattern. Returns matching lines with file paths and line numbers.",
-        inputSchema: jsonSchema<{ pattern: string; path?: string }>({
-          type: "object",
-          properties: {
-            pattern: { type: "string", description: "Regex or fixed string to search for" },
-            path: { type: "string", description: "Directory to search in (default: /)" },
-          },
-          required: ["pattern"],
-        }),
-        execute: async (args: { pattern: string; path?: string }) => {
-          const result = await shell.exec(`grep -rn '${args.pattern}' ${args.path || "/"}`);
-          return result.stdout || "No matches found.";
-        },
-      }),
-
-      delete: tool({
-        description: "Delete a file or directory.",
-        inputSchema: jsonSchema<{ path: string }>({
-          type: "object",
-          properties: { path: { type: "string", description: "Path to delete" } },
-          required: ["path"],
-        }),
-        execute: async (args: { path: string }) => {
-          await vfs.unlink(args.path);
-          return `Deleted ${args.path}`;
-        },
-      }),
-    };
-
-    // ── Shell emulator ───────────────────────────────────────────
-
-    const shellTool: ToolSet = {
-      shell_exec: tool({
-        description: "Execute a POSIX shell command over the agent's virtual filesystem. " +
-          "Supports: cat, head, tail, ls, tree, find, grep, echo, mkdir, touch, rm, cp, mv, sed, stat, wc. " +
-          "Pipelines (|), redirects (>, >>), and chaining (&&, ||, ;) are supported. " +
-          "Does NOT execute real programs — use execute_code for that.",
-        inputSchema: jsonSchema<{ command: string }>({
-          type: "object",
-          properties: { command: { type: "string", description: "Shell command to execute" } },
-          required: ["command"],
-        }),
-        execute: async (args: { command: string }) => {
-          const result = await shell.exec(args.command);
-          if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
-          return result.stdout || "(no output)";
-        },
-      }),
-    };
-
-    // ── Explore tool (MCTS) ──────────────────────────────────────
+    // ── 2-tool architecture ──────────────────────────────────────
+    // Only 2 top-level tools: execute (codemode sandbox) + explore (MCTS).
+    // Everything else is a namespaced API inside the codemode sandbox:
+    //   workspace.readFile(), workspace.exec(), workspace.searchMemory()
+    //   nimbus.exec(), sandbox.exec(), laptop.exec() (when connected)
 
     const orchestrator = this;
-    const exploreTool: ToolSet = {
-      explore: tool({
-        description: "Deeply explore a complex subproblem using Monte Carlo Tree Search. " +
-          "Spawns multiple exploration branches, evaluates them, and returns the best approach.",
-        inputSchema: jsonSchema<{ task: string; budget?: number }>({
-          type: "object",
-          properties: {
-            task: { type: "string", description: "The subproblem to explore" },
-            budget: { type: "number", description: "Number of MCTS iterations (default: 2)" },
-          },
-          required: ["task"],
-        }),
-        execute: async (args: { task: string; budget?: number }) => {
-          try {
-            return await orchestrator.runFiber(`explore-${Date.now()}`, async (ctx) => {
-              ctx.stash({ task: args.task, phase: "starting" });
-              orchestrator.broadcastMctsProgress("explore-starting");
-              const session = orchestrator.createMCTSSession();
-              const { nanoid } = await import("@proteus/core");
-              await session.appendMessage(
-                { id: nanoid(), role: "user" as const, parts: [{ type: "text" as const, text: args.task }] },
-                null,
-              );
-              ctx.stash({ task: args.task, phase: "running" });
-              await orchestrator.engine.onLifetimeEvolution(session);
-              orchestrator.broadcastMctsProgress("explore-completed");
-              ctx.stash({ task: args.task, phase: "completed" });
-              const best = orchestrator.sql<{ action: string; value: number }>`
-                SELECT action, value FROM search_nodes WHERE status = 'terminal'
-                ORDER BY value DESC LIMIT 1`;
-              if (best.length > 0) {
-                return `Exploration complete. Best approach (score ${best[0]!.value.toFixed(2)}): ${best[0]!.action}`;
-              }
-              return "Exploration complete. Check the MCTS tree for detailed results.";
-            });
-          } catch (err) {
-            return `Exploration failed: ${(err as Error).message}`;
-          }
-        },
-      }),
-    };
-
-    // ── Merge all tools ──────────────────────────────────────────
-    // Order: core domain tools, then fs tools (overwrite Think's workspace),
-    // then shell, explore, codemode upgrade.
-
-    const tools: ToolSet = {
-      ...coreTools,
-      ...fsTools,
-      ...shellTool,
-      ...exploreTool,
-    };
-
-    // Codemode execute (sandboxed Worker) when LOADER binding available
     const env = this.env as Env & Record<string, unknown>;
+    const tools: ToolSet = {};
+
+    // ── Tool 1: execute (codemode sandbox) ───────────────────────
+    // All file/shell/memory operations are workspace.* APIs inside the sandbox.
+    // The LLM writes JS code: workspace.readFile("/src/main.ts")
     if (env.LOADER) {
       try {
-        tools.execute_code = createExecuteTool({
-          tools,
+        // Gather all execution providers (workspace is always available,
+        // nimbus/sandbox/laptop are stubs until connected)
+        const providers = this.rt.executionRouter?.getProviders() ?? [];
+
+        tools.execute = createExecuteTool({
+          tools: {},   // no codemode.* domain tools — everything is in providers
+          providers,   // workspace.*, nimbus.*, sandbox.*, laptop.*
           loader: env.LOADER as WorkerLoader,
         });
       } catch (err) {
         console.warn("[proteus] createExecuteTool failed:", (err as Error).message);
       }
     }
+
+    // ── Tool 2: explore (MCTS) ───────────────────────────────────
+    // Needs fiber (durable checkpoint) — can't run inside codemode sandbox.
+    tools.explore = tool({
+      description: "Deeply explore a complex subproblem using Monte Carlo Tree Search. " +
+        "Spawns multiple exploration branches, evaluates them, and returns the best approach. " +
+        "Use this for difficult design decisions, architecture choices, or multi-step problem solving.",
+      inputSchema: jsonSchema<{ task: string; budget?: number }>({
+        type: "object",
+        properties: {
+          task: { type: "string", description: "The subproblem to explore" },
+          budget: { type: "number", description: "Number of MCTS iterations (default: 5)" },
+        },
+        required: ["task"],
+      }),
+      execute: async (args: { task: string; budget?: number }) => {
+        try {
+          return await orchestrator.runFiber(`explore-${Date.now()}`, async (ctx) => {
+            ctx.stash({ task: args.task, phase: "starting" });
+            orchestrator.broadcastMctsProgress("explore-starting");
+            const session = orchestrator.createMCTSSession();
+            const { nanoid } = await import("@proteus/core");
+            await session.appendMessage(
+              { id: nanoid(), role: "user" as const, parts: [{ type: "text" as const, text: args.task }] },
+              null,
+            );
+            ctx.stash({ task: args.task, phase: "running" });
+            await orchestrator.engine.onLifetimeEvolution(session);
+            orchestrator.broadcastMctsProgress("explore-completed");
+            ctx.stash({ task: args.task, phase: "completed" });
+            const best = orchestrator.sql<{ action: string; value: number }>`
+              SELECT action, value FROM search_nodes WHERE status = 'terminal'
+              ORDER BY value DESC LIMIT 1`;
+            if (best.length > 0) {
+              return `Exploration complete. Best approach (score ${best[0]!.value.toFixed(2)}): ${best[0]!.action}`;
+            }
+            return "Exploration complete. Check the MCTS tree for detailed results.";
+          });
+        } catch (err) {
+          return `Exploration failed: ${(err as Error).message}`;
+        }
+      },
+    });
 
     console.log(`[proteus] getTools() returning: ${Object.keys(tools).join(", ")}`);
     return tools;
@@ -567,11 +417,7 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
       name: t.name, description: t.description, scope: t.scope,
     }));
     return {
-      builtIn: [
-        "read", "write", "edit", "list", "find", "grep", "delete",
-        "shell_exec", "search_memory", "save_note", "execute_code",
-        "list_tools", "explore",
-      ],
+      builtIn: ["execute", "explore"],
       crafted,
     };
   }
@@ -595,29 +441,14 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
 
   @callable() async getToolDescriptions() {
     const builtIn = [
-      // Filesystem (SqliteFS — unified, overwrites Think's workspace tools)
-      { name: "read", description: "Read a file with line numbers. Supports offset/limit for large files." },
-      { name: "write", description: "Write content to a file. Creates parent directories automatically." },
-      { name: "edit", description: "Targeted string replacement in a file (find old_string, replace with new_string)." },
-      { name: "list", description: "List files and directories at a path." },
-      { name: "find", description: "Find files matching a glob pattern (*, **, ?)." },
-      { name: "grep", description: "Search file contents using regex. Returns matching lines with paths and line numbers." },
-      { name: "delete", description: "Delete a file or directory." },
-      // Shell
-      { name: "shell_exec", description: "POSIX shell: cat, head, tail, ls, tree, find, grep, sed, wc, echo, mkdir, rm, cp, mv. Pipes and redirects supported." },
-      // Memory
-      { name: "search_memory", description: "Search long-term memory using FTS5 full-text search." },
-      { name: "save_note", description: "Save a note to long-term memory (MEMORY.md) with FTS5 indexing." },
-      // Code
-      { name: "execute_code", description: "Execute JavaScript code in a sandboxed environment." },
-      // Meta
-      { name: "list_tools", description: "List all available tools including dynamically crafted ones." },
-      { name: "explore", description: "MCTS exploration on a complex subproblem via durable fiber." },
+      { name: "execute", description: "Execute JavaScript code with namespaced APIs: workspace.readFile(), workspace.writeFile(), workspace.exec(), workspace.searchMemory(), workspace.saveNote(), workspace.listTools(). Additional executors (nimbus.*, sandbox.*, laptop.*) available when connected." },
+      { name: "explore", description: "MCTS tree search for complex subproblems. Spawns branches, evaluates approaches, and returns the best one." },
     ];
     const crafted = this.rt.craftStore.list().map(t => ({
       name: t.name, description: t.description || "Crafted tool", isLearned: true,
     }));
-    return { builtIn, crafted };
+    const executors = this.rt.executionRouter?.listExecutors() ?? [];
+    return { builtIn, crafted, executors };
   }
 
   @callable() async setModel(modelId: string) {
@@ -628,6 +459,10 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
   @callable() async setDisplayName(displayName: string) {
     this.sql`INSERT OR REPLACE INTO agent_config (key, value) VALUES ('display_name', ${displayName})`;
     return { displayName };
+  }
+
+  @callable() async getExecutors() {
+    return this.rt.executionRouter?.listExecutors() ?? [];
   }
 
   @callable() async getAvailableModels() {
