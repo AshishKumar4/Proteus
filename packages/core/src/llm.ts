@@ -8,7 +8,7 @@
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText, streamText } from 'ai';
-import type { StepResult, ToolSet } from 'ai';
+import type { LanguageModel, StepResult, ToolSet } from 'ai';
 import type { LLM } from './types/primitives.js';
 
 export interface LLMProviderConfig {
@@ -101,4 +101,59 @@ export function collectStepText(result: { text: string; steps: StepResult<ToolSe
   return toolSummaries.length > 0
     ? toolSummaries.join('\n')
     : '(no response)';
+}
+
+/**
+ * Unified chat-model factory. Collapses the four near-duplicate Workers-AI /
+ * AI-Gateway / OpenAI-compatible branches that previously lived in
+ * cf-backend/orchestrator.ts, cf-backend/runtime.ts (twice), and
+ * cf-backend/exploration.ts into one surface.
+ *
+ * Returns a Vercel AI SDK LanguageModel suitable for passing to generateText /
+ * streamText / Think. For an LLM primitive (with .stream/.complete), use
+ * createVercelAILLM.
+ *
+ * The `workers-ai` branch keeps the binding lookup opaque — callers pass the
+ * DO env binding and we defer to @cloudflare/workers-ai-provider at call time
+ * via a factory indirection, so this file has no hard dep on that package.
+ */
+export type ChatModelConfig =
+  | {
+      kind: 'workers-ai';
+      /** Workers AI binding from env.AI. */
+      factory: (modelId: string, opts?: { sessionAffinity?: boolean }) => LanguageModel;
+      modelId: string;
+      sessionAffinity?: boolean;
+    }
+  | {
+      kind: 'ai-gateway';
+      baseURL: string;
+      /** Full Authorization header value (e.g. 'Bearer sk-...'). */
+      auth: string;
+      modelId: string;
+    }
+  | {
+      kind: 'openai-compat';
+      name?: string;
+      baseURL: string;
+      headers: Record<string, string>;
+      modelId: string;
+    };
+
+export function createChatModel(config: ChatModelConfig): LanguageModel {
+  if (config.kind === 'workers-ai') {
+    return config.factory(config.modelId, { sessionAffinity: config.sessionAffinity });
+  }
+  if (config.kind === 'ai-gateway') {
+    return createOpenAICompatible({
+      name: 'workers-ai',
+      baseURL: config.baseURL,
+      headers: { Authorization: config.auth },
+    }).chatModel(config.modelId);
+  }
+  return createOpenAICompatible({
+    name: config.name ?? 'openai-compat',
+    baseURL: config.baseURL,
+    headers: config.headers,
+  }).chatModel(config.modelId);
 }

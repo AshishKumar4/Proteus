@@ -138,3 +138,13 @@ export interface Identity {
     version(): Promise<number>;
   };
 }
+
+/**
+ * 7. SHELL — POSIX command execution over a VFS.
+ * Both `agent-utils/shell.createShell(vfs)` (structural match) and any other
+ * host-native shell bridge satisfy this. Optional on AgentRuntime; tools that
+ * need shell access (e.g. `run`) read it and fall back to the executionRouter.
+ */
+export interface Shell {
+  exec(command: string, stdin?: string): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+}
