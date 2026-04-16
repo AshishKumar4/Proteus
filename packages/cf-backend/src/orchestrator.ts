@@ -61,24 +61,27 @@ export class OrchestratorAgent extends Think<Env> {
   private _cachedTools: ToolSet | null = null;
   private _cachedToolsKey: string = "";
 
-  // ── Turn-level latency tracing ──
-  // Records ms timestamps for each pre-inference step and broadcasts to UI.
-  private _turnTraceT0 = 0;
+  // ── Activity logging: persisted + broadcast to Logs pane ──
+  private _turnT0 = 0;
   private _firstChunkReceived = false;
 
-  private _trace(event: string, detail?: string) {
-    const elapsed = this._turnTraceT0 > 0 ? performance.now() - this._turnTraceT0 : 0;
-    const msg = `[${elapsed.toFixed(0).padStart(6)}ms] ${event}${detail ? ` — ${detail}` : ""}`;
-    console.log(`[proteus:trace] ${msg}`);
+  private logActivity(event: string, detail?: string) {
+    const elapsed = this._turnT0 > 0 ? Math.round(performance.now() - this._turnT0) : 0;
+    const now = Date.now();
+    console.log(`[proteus:${String(elapsed).padStart(6)}ms] ${event}${detail ? ` — ${detail}` : ""}`);
+    try {
+      this.sql`INSERT INTO activity_log (event, detail, elapsed_ms, created_at)
+        VALUES (${event}, ${detail ?? null}, ${elapsed}, ${now})`;
+    } catch { /* table may not exist on very first start */ }
     try {
       this.broadcast(JSON.stringify({
-        type: "turn-trace",
-        elapsed: Math.round(elapsed),
+        type: "activity-log",
         event,
         detail: detail ?? null,
-        timestamp: Date.now(),
+        elapsed,
+        timestamp: now,
       }));
-    } catch { /* no connections — fine */ }
+    } catch { /* no connections */ }
   }
 
   private get rt(): AgentRuntime {
@@ -131,14 +134,13 @@ export class OrchestratorAgent extends Think<Env> {
   // ── Think lifecycle overrides ──────────────────────────────────
 
   getModel(): LanguageModel {
-    this._trace("getModel start");
+    this.logActivity("getmodel");
     const model = this.createModel(this.getStoredModelId());
-    this._trace("getModel done");
     return model;
   }
 
   getSystemPrompt(): string {
-    this._trace("getSystemPrompt start");
+    this.logActivity("getsystemprompt_start");
     try {
       const rows = this.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`;
       const purpose = rows[0]?.purpose ?? "You are a helpful coding assistant.";
@@ -183,10 +185,10 @@ Full-text search over long-term memory. Quick recall — no code needed.
 ## Evolution
 Your capabilities improve automatically via CraftStore — good patterns become tools.* APIs inside execute_tools.
 Summarize what you did after using tools.`;
-      this._trace("getSystemPrompt done", `${prompt.length} chars`);
+      this.logActivity("getsystemprompt_end", `${prompt.length} chars`);
       return prompt;
     } catch {
-      this._trace("getSystemPrompt fallback");
+      this.logActivity("getsystemprompt_end", "fallback");
       return "You are a helpful coding assistant.";
     }
   }
@@ -207,35 +209,32 @@ Summarize what you did after using tools.`;
 
   getTools(): ToolSet {
     // getTools() is the first subclass hook called by _runInferenceLoop.
-    // Start the per-turn trace timer here to capture the full pre-inference path.
-    this._turnTraceT0 = performance.now();
-    this._trace("getTools start");
+    // Start the per-turn timer here to capture the full pre-inference path.
+    this._turnT0 = performance.now();
+    this.logActivity("gettools_start");
 
     // Fast path: return cached tools if CraftStore hasn't changed
     const cacheKey = this._craftCacheKey();
     if (this._cachedTools && cacheKey === this._cachedToolsKey) {
-      this._trace("getTools cache HIT");
+      this.logActivity("gettools_end", "cache hit");
       return this._cachedTools;
     }
-    this._trace("getTools cache MISS — rebuilding", `key: ${this._cachedToolsKey} → ${cacheKey}`);
+    this.logActivity("gettools_rebuilding", `${this._cachedToolsKey} → ${cacheKey}`);
 
     try {
     const orchestrator = this;
     const env = this.env as Env & Record<string, unknown>;
     const tools: ToolSet = {};
 
-    this._trace("getTools: accessing runtime");
     const router = this.rt.executionRouter;
     const memory = this.rt.memory;
     const craftStore = this.rt.craftStore;
     const shell = createShell(this.rt.sqliteFS);
-    this._trace("getTools: runtime ready");
 
     // ── 1. execute_tools: codemode sandbox with workspace.* + tools.* ──
     if (env.LOADER) {
       try {
         const providers = router?.getProviders() ?? [];
-        this._trace("getTools: providers", `${providers.length}: ${providers.map(p => p.name).join(", ")}`);
 
         // Inject crafted tools so they're callable as tools.* inside codemode
         const craftedToolSet: Record<string, { description: string; execute: Function }> = {};
@@ -253,15 +252,12 @@ Summarize what you did after using tools.`;
             }
           }
         } catch { /* CraftStore may not be initialized yet */ }
-        this._trace("getTools: crafted tools eval'd", `${Object.keys(craftedToolSet).length} tools`);
 
-        this._trace("getTools: createExecuteTool start");
         tools.execute_tools = createExecuteTool({
           tools: craftedToolSet,
           providers,
           loader: env.LOADER as WorkerLoader,
         });
-        this._trace("getTools: createExecuteTool done");
       } catch (err) {
         console.error("[proteus] createExecuteTool FAILED:", (err as Error).message, (err as Error).stack);
       }
@@ -417,7 +413,7 @@ Summarize what you did after using tools.`;
     // Cache the result for subsequent turns
     this._cachedTools = tools;
     this._cachedToolsKey = cacheKey;
-    this._trace("getTools done (rebuilt)", `${Object.keys(tools).length} tools: ${Object.keys(tools).join(", ")}`);
+    this.logActivity("gettools_end", `rebuilt — ${Object.keys(tools).length} tools`);
     return tools;
     } catch (err) {
       console.error("[proteus] getTools() FAILED:", err);
@@ -439,28 +435,23 @@ Summarize what you did after using tools.`;
   // ── Think lifecycle hooks ──────────────────────────────────────
 
   beforeTurn(_ctx: TurnContext): TurnConfig | void {
-    // beforeTurn fires INSIDE _runInferenceLoop, after getTools/getSystemPrompt/
-    // getModel and message preparation. It's the last hook before streamText().
-    // We set T0 here to measure the model-side latency (beforeTurn → first chunk).
-    // The getTools/getSystemPrompt/getModel traces have their own T0 relative
-    // timing from the same _turnTraceT0.
     this._turnToolCalls = [];
     this._turnStepCount = 0;
     this._turnStartedAt = Date.now();
     this._turnHadError = false;
     this._firstChunkReceived = false;
-    this._trace("beforeTurn", "streamText() will be called next by Think SDK");
+    this.logActivity("beforeturn", "streamText() called next");
   }
 
   onChunk(_ctx: ChunkContext): void {
     if (!this._firstChunkReceived) {
       this._firstChunkReceived = true;
-      this._trace("FIRST CHUNK from model");
+      this.logActivity("first_chunk");
     }
   }
 
   afterToolCall(ctx: ToolCallResultContext): void {
-    this._trace("afterToolCall", ctx.toolName);
+    this.logActivity("tool_call_end", ctx.toolName);
     this._turnToolCalls.push({
       name: ctx.toolName,
       args: ctx.args,
@@ -470,11 +461,11 @@ Summarize what you did after using tools.`;
 
   onStepFinish(_ctx: StepContext): void {
     this._turnStepCount++;
-    this._trace("onStepFinish", `step ${this._turnStepCount}`);
+    this.logActivity("step_finish", `step ${this._turnStepCount}`);
   }
 
   async onChatResponse(result: ChatResponseResult) {
-    this._trace("onChatResponse", result.status);
+    this.logActivity("response_complete", result.status);
     if (result.status !== "completed") return;
 
     const userMessages = this.messages.filter(m => m.role === "user");
@@ -782,15 +773,30 @@ Summarize what you did after using tools.`;
   }
 
   @callable() async getLogs(limit = 100) {
-    // Collect evolution events as log entries
-    const events = this.sql<{ id: string; type: string; message: string; created_at: number }>`
+    // Merge evolution events + activity log, return newest first
+    const evoRows = this.sql<{ id: string; type: string; message: string; created_at: number }>`
       SELECT id, type, message, created_at FROM evolution_events ORDER BY created_at DESC LIMIT ${limit}`;
-    return events.map(e => ({
+    const evoLogs = evoRows.map(e => ({
       id: e.id,
       time: e.created_at,
       type: e.type.includes("error") ? "error" as const : "evolution" as const,
       message: `[${e.type}] ${e.message}`,
     }));
+    let actLogs: Array<{ id: string; time: number; type: "info"; message: string; detail?: string }> = [];
+    try {
+      const actRows = this.sql<{ id: string; event: string; detail: string | null; elapsed_ms: number; created_at: number }>`
+        SELECT id, event, detail, elapsed_ms, created_at FROM activity_log ORDER BY created_at DESC LIMIT ${limit}`;
+      actLogs = actRows.map(a => ({
+        id: a.id,
+        time: a.created_at,
+        type: "info" as const,
+        message: `[${a.elapsed_ms}ms] ${a.event}`,
+        detail: a.detail ?? undefined,
+      }));
+    } catch { /* table may not exist yet */ }
+    const merged = [...evoLogs, ...actLogs];
+    merged.sort((a, b) => b.time - a.time);
+    return merged.slice(0, limit);
   }
 
   @callable() async getMctsConfig() {
@@ -833,6 +839,15 @@ Summarize what you did after using tools.`;
     } catch (err) {
       console.warn("[proteus] broadcastMctsProgress failed:", err);
     }
+  }
+
+  @callable()
+  async getActivityLog(limit = 100) {
+    try {
+      return this.sql<{ id: string; event: string; detail: string | null; elapsed_ms: number; created_at: number }>`
+        SELECT id, event, detail, elapsed_ms, created_at FROM activity_log
+        ORDER BY created_at DESC LIMIT ${limit}`;
+    } catch { return []; }
   }
 
   @callable()
