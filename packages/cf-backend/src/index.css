@@ -18,9 +18,9 @@ html, body, #root {
   --c-border:   rgba(255, 255, 255, 0.08);
   --c-input-border: #27272a;
 
-  --c-accent:   #58a6ff;
-  --c-accent-fg: #58a6ff;
-  --c-accent-subtle: rgba(88, 166, 255, 0.10);
+  --c-accent:   #8b5cf6;
+  --c-accent-fg: #a78bfa;
+  --c-accent-subtle: rgba(139, 92, 246, 0.12);
 
   --c-success:  #3fb950;
   --c-warning:  #d29922;
@@ -30,8 +30,8 @@ html, body, #root {
   --c-text-2:   #a1a1aa;
   --c-text-3:   #52525b;
 
-  --c-user-bg:     #1a1a2e;
-  --c-user-border: rgba(88, 166, 255, 0.15);
+  --c-user-bg:     #1a1528;
+  --c-user-border: rgba(139, 92, 246, 0.15);
   --c-agent-bg:    #141416;
   --c-agent-border: rgba(255, 255, 255, 0.04);
 }
@@ -44,9 +44,9 @@ html, body, #root {
   --c-border:   rgba(0, 0, 0, 0.08);
   --c-input-border: #e4e4e7;
 
-  --c-accent:   #2563eb;
-  --c-accent-fg: #2563eb;
-  --c-accent-subtle: rgba(37, 99, 235, 0.08);
+  --c-accent:   #7c3aed;
+  --c-accent-fg: #7c3aed;
+  --c-accent-subtle: rgba(124, 58, 237, 0.08);
 
   --c-success:  #16a34a;
   --c-warning:  #ca8a04;
@@ -56,8 +56,8 @@ html, body, #root {
   --c-text-2:   #71717a;
   --c-text-3:   #a1a1aa;
 
-  --c-user-bg:     #eff6ff;
-  --c-user-border: rgba(37, 99, 235, 0.12);
+  --c-user-bg:     #f5f3ff;
+  --c-user-border: rgba(124, 58, 237, 0.12);
   --c-agent-bg:    #fafafa;
   --c-agent-border: rgba(0, 0, 0, 0.04);
 }
