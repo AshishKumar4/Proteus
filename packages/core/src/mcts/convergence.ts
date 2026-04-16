@@ -14,6 +14,7 @@ import type { AgentRuntime } from '../types/agent-runtime.js';
 import type { SearchNode } from '../types/mcts.js';
 import type { ConvergenceResult } from '../types/evaluation.js';
 import type { SessionWriter } from './record-node.js';
+import { maybeStoreCraftedTool } from '../craft/discovery.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { isoDate } from '../utils/date.js';
 
@@ -65,6 +66,19 @@ export async function converge(
     `\n## Successful approach (${isoDate()}, score ${winner.value.toFixed(2)})\n${summary}\n`,
   );
   await rt.memory.index('memory/MEMORY.md');
+
+  // Extract winning code into CraftStore if available.
+  // code_used is populated by ExplorationAgent when the branch produces code blocks.
+  const winnerCode = rt.storage.sql<{ code_used: string | null }>`
+    SELECT code_used FROM search_nodes WHERE id = ${winner.id}
+  `[0]?.code_used;
+  if (winnerCode && winner.value > 0.6) {
+    try {
+      await maybeStoreCraftedTool(rt, winnerCode, winner.value);
+    } catch {
+      // Craft extraction failure is non-fatal
+    }
+  }
 
   // Mark all other open nodes as pruned
   rt.storage.sql`

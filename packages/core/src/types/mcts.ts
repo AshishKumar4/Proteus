@@ -16,6 +16,8 @@ export interface SearchNode {
   task: string;
   action: string;
   observation: string;
+  /** Code extracted from exploration branch (JS code blocks). Used for CraftStore extraction. */
+  code_used: string | null;
   visits: number;
   /** Mean return in [0, 1]. Initialized to 0 (BUG-1 fix). */
   value: number;

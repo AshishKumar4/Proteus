@@ -38,6 +38,7 @@ export interface RecordNodeOpts {
   task: string;
   action: string;
   observation: string;
+  codeUsed: string | null;
   depth: number;
 }
 
@@ -68,11 +69,11 @@ export async function recordNode(
 
   sql`
     INSERT INTO search_nodes
-      (id, parent_id, task, action, observation, depth, msg_id)
+      (id, parent_id, task, action, observation, code_used, depth, msg_id)
     VALUES
       (${opts.nodeId}, ${opts.parentNodeId ?? null},
        ${opts.task}, ${opts.action}, ${opts.observation},
-       ${opts.depth}, ${msgId})
+       ${opts.codeUsed ?? null}, ${opts.depth}, ${msgId})
   `;
 
   return msgId;
