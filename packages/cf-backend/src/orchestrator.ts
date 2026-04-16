@@ -639,6 +639,20 @@ Use explore to deeply investigate a complex subproblem with MCTS.`;
     return { purpose };
   }
 
+  @callable() async clearMemory() {
+    const execRaw = (ddl: string) => this.ctx.storage.sql.exec(ddl);
+    execRaw("DELETE FROM vfs_files WHERE path LIKE 'memory/%'");
+    execRaw("DELETE FROM memory_chunks");
+    try { execRaw("DELETE FROM memory_chunks_fts"); } catch { /* FTS table may not exist */ }
+    return { cleared: true };
+  }
+
+  @callable() async resetMctsTree() {
+    const execRaw = (ddl: string) => this.ctx.storage.sql.exec(ddl);
+    execRaw("DELETE FROM search_nodes");
+    return { cleared: true };
+  }
+
   /**
    * Broadcast the current MCTS tree to all connected WebSocket clients.
    * Called after each MCTS iteration so the UI updates in real-time.

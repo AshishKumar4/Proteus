@@ -10,7 +10,9 @@ import {
   ClockIcon, WifiSlashIcon, ArrowsClockwiseIcon, BrainIcon,
   FolderOpenIcon, GitBranchIcon, CheckCircleIcon, TrashIcon,
   ChatTextIcon, CopyIcon, TerminalIcon, GearIcon, ArrowSquareOutIcon,
+  GearSixIcon, TimerIcon, FunnelIcon,
 } from "@phosphor-icons/react";
+import { ScoreBar } from "@/components/ui/score-bar";
 import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
 import Markdown from "react-markdown";
@@ -74,6 +76,17 @@ function getMessageText(msg: UIMessage): string {
   return msg.parts.filter(p => p.type === "text").map(p => (p as { type: "text"; text: string }).text).join("");
 }
 
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function MessageTimestamp({ createdAt }: { createdAt?: string | number | Date }) {
+  if (!createdAt) return null;
+  const d = createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (isNaN(d.getTime())) return null;
+  return <span className="text-[10px] text-kumo-inactive mt-1 block">{formatTime(d)}</span>;
+}
+
 function ReasoningBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -94,12 +107,27 @@ function ToolCallBlock({ toolName, input, output, isRunning, isError }: {
   toolName: string; input?: Record<string, unknown>; output?: unknown; isRunning: boolean; isError: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const startTime = useRef(Date.now());
+  const [elapsed, setElapsed] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (isRunning) {
+      startTime.current = Date.now();
+      setElapsed(null);
+    } else if (elapsed === null && startTime.current) {
+      setElapsed(Date.now() - startTime.current);
+    }
+  }, [isRunning]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const durationLabel = elapsed !== null && elapsed > 0 ? `${(elapsed / 1000).toFixed(1)}s` : null;
+
   return (
     <div className="my-1.5">
       <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-kumo-subtle hover:text-kumo-default transition-colors">
         {isRunning ? <Loader size="sm" /> : isError ? <WrenchIcon size={12} className="text-red-400" /> : <CheckCircleIcon size={12} className="text-green-400" />}
         <span className="font-mono">{toolName}</span>
         {isRunning && <span className="text-amber-400/80 text-[11px]">running...</span>}
+        {durationLabel && !isRunning && <span className="text-kumo-inactive text-[10px] flex items-center gap-0.5"><TimerIcon size={10} />{durationLabel}</span>}
         {expanded ? <CaretDownIcon size={10} /> : <CaretRightIcon size={10} />}
       </button>
       {expanded && (
@@ -118,10 +146,11 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
 
   if (isUser) {
     return (
-      <div className="flex justify-end animate-fade-in">
+      <div className="flex flex-col items-end animate-fade-in">
         <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-br-sm p-user-bubble text-sm leading-relaxed whitespace-pre-wrap">
           {getMessageText(message)}
         </div>
+        <MessageTimestamp createdAt={(message as { createdAt?: string }).createdAt} />
       </div>
     );
   }
@@ -174,6 +203,7 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
         }
         return null;
       })}
+      {!isLive && <MessageTimestamp createdAt={(message as { createdAt?: string }).createdAt} />}
     </div>
   );
 }
@@ -199,6 +229,60 @@ function EvolutionItem({ event }: { event: EvolutionEventRow }) {
         </div>
         <span className="text-sm text-kumo-default block">{event.message}</span>
       </div>
+    </div>
+  );
+}
+
+const TIMESCALE_MAP: Record<string, "turn" | "session" | "lifetime"> = {
+  reflection: "turn", craft_discovered: "turn",
+  consolidation: "session",
+  scaffold_proposed: "lifetime", mcts_complete: "lifetime", mcts_started: "lifetime",
+};
+const TIMESCALE_LABEL: Record<string, string> = { turn: "Turn", session: "Session", lifetime: "Lifetime" };
+const TIMESCALE_BORDER: Record<string, string> = { turn: "border-l-blue-400", session: "border-l-amber-400", lifetime: "border-l-purple-400" };
+type EvoFilter = "all" | "turn" | "session" | "lifetime";
+
+function EvolutionTab({ events, onRefresh }: { events: EvolutionEventRow[]; onRefresh: () => void }) {
+  const [filter, setFilter] = useState<EvoFilter>("all");
+  const filtered = filter === "all" ? events : events.filter(e => TIMESCALE_MAP[e.type] === filter);
+
+  return (
+    <div className="animate-fade-in">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <ClockIcon size={14} className="text-kumo-subtle" />
+          <span className="text-sm font-medium text-kumo-default">Evolution Timeline</span>
+          {events.length > 0 && <Badge variant="secondary">{events.length}</Badge>}
+        </div>
+        <Button variant="secondary" size="sm" onClick={onRefresh}>Refresh</Button>
+      </div>
+      {events.length > 0 && (
+        <div className="flex items-center gap-1 mb-3">
+          {(["all", "turn", "session", "lifetime"] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-2 py-1 text-[11px] rounded-md transition-colors ${filter === f ? "bg-kumo-elevated text-kumo-default font-medium" : "text-kumo-inactive hover:text-kumo-subtle"}`}>
+              {f === "all" ? "All" : TIMESCALE_LABEL[f]}
+            </button>
+          ))}
+        </div>
+      )}
+      {filtered.length === 0 ? (
+        <EmptyTab icon={<SparkleIcon size={28} />} title={events.length === 0 ? "No evolution events yet" : "No events match filter"} hint={events.length === 0 ? "Send a few messages to trigger evolution" : undefined} />
+      ) : filtered.map(e => {
+        const scale = TIMESCALE_MAP[e.type] ?? "turn";
+        return (
+          <div key={e.id} className={`flex gap-3 animate-fade-in border-l-2 ${TIMESCALE_BORDER[scale]} pl-3 mb-3`}>
+            <div className="pb-1">
+              <div className="flex items-center gap-2 text-xs text-kumo-subtle mb-0.5">
+                <span className="font-mono text-[11px]">{new Date(e.created_at).toLocaleTimeString()}</span>
+                <Badge variant="secondary">{e.type}</Badge>
+                <span className="text-[10px] text-kumo-inactive">{TIMESCALE_LABEL[scale]}</span>
+              </div>
+              <span className="text-sm text-kumo-default block">{e.message}</span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -357,6 +441,9 @@ export default function WorkspacePage() {
                 {state.messages.length > 0 && (
                   <Button variant="ghost" shape="square" size="sm" onClick={state.clearHistory} icon={<TrashIcon size={12} />} aria-label="Clear" />
                 )}
+                <Link to={`/settings/${agentId}`} className="text-kumo-subtle hover:text-kumo-default transition-colors" title="Settings">
+                  <GearSixIcon size={14} />
+                </Link>
                 <Link to={`/mcts/${agentId}`} className="flex items-center gap-1 text-[11px] p-accent hover:opacity-80 transition-opacity">
                   <TreeStructureIcon size={12} />MCTS<ArrowSquareOutIcon size={10} />
                 </Link>
@@ -445,15 +532,25 @@ export default function WorkspacePage() {
                 <div className="space-y-2 animate-fade-in">
                   {state.tools.length === 0 ? (
                     <EmptyTab icon={<PackageIcon size={28} />} title="No tools discovered yet" hint="The agent discovers tools as it works" />
-                  ) : state.tools.map(tool => (
-                    <div key={tool.name} className="p-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <PackageIcon size={13} className="p-accent" />
-                        <span className="text-sm font-medium font-mono text-kumo-default">{tool.name}</span>
+                  ) : state.tools.map(tool => {
+                    const isLearned = tool.scope === "global";
+                    return (
+                      <div key={tool.name} className="p-card rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <PackageIcon size={13} className="p-accent" />
+                          <span className="text-sm font-medium font-mono text-kumo-default">{tool.name}</span>
+                          <Badge variant={isLearned ? "primary" : "secondary"}>
+                            {isLearned ? "Learned" : "Built-in"}
+                          </Badge>
+                          {tool.usageCount > 0 && (
+                            <span className="text-[10px] text-kumo-inactive ml-auto">{tool.usageCount} uses</span>
+                          )}
+                        </div>
+                        <span className="text-xs text-kumo-subtle block leading-relaxed mb-1.5">{tool.description}</span>
+                        {isLearned && <ScoreBar value={tool.qualityScore} className="mt-1" />}
                       </div>
-                      <span className="text-xs text-kumo-subtle block leading-relaxed">{tool.description}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -466,13 +563,15 @@ export default function WorkspacePage() {
                       placeholder="Search memory..." className="w-full rounded-lg border border-kumo-line bg-kumo-elevated pl-9 pr-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-1 focus:ring-kumo-ring placeholder:text-kumo-inactive transition-all" />
                   </div>
                   {!memorySearch && state.memoryContent ? (
-                    <div className="p-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-2">
+                    <div className="p-card rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-3">
                         <DatabaseIcon size={13} className="p-accent" />
                         <span className="text-xs font-mono p-accent">memory/MEMORY.md</span>
                         <span className="text-[10px] text-kumo-inactive ml-auto">{state.memoryContent.length} chars</span>
                       </div>
-                      <pre className="text-xs text-kumo-subtle whitespace-pre-wrap max-h-96 overflow-y-auto leading-relaxed">{state.memoryContent}</pre>
+                      <div className="prose-chat text-kumo-default max-h-[500px] overflow-y-auto">
+                        <MarkdownContent content={state.memoryContent} />
+                      </div>
                     </div>
                   ) : !memorySearch ? (
                     <EmptyTab icon={<FolderOpenIcon size={28} />} title="No memories yet" hint="Ask the agent to remember something with save_note" />
@@ -491,19 +590,7 @@ export default function WorkspacePage() {
 
               {/* Evolution */}
               {activeTab === "Evolution" && (
-                <div className="animate-fade-in">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <ClockIcon size={14} className="text-kumo-subtle" />
-                      <span className="text-sm font-medium text-kumo-default">Evolution Timeline</span>
-                      {state.evolutionEvents.length > 0 && <Badge variant="secondary">{state.evolutionEvents.length}</Badge>}
-                    </div>
-                    <Button variant="secondary" size="sm" onClick={state.refreshEvolution}>Refresh</Button>
-                  </div>
-                  {state.evolutionEvents.length === 0 ? (
-                    <EmptyTab icon={<SparkleIcon size={28} />} title="No evolution events yet" hint="Send a few messages to trigger evolution" />
-                  ) : state.evolutionEvents.map(e => <EvolutionItem key={e.id} event={e} />)}
-                </div>
+                <EvolutionTab events={state.evolutionEvents} onRefresh={state.refreshEvolution} />
               )}
 
               {activeTab === "Logs" && <LogsTab logs={state.logs} connectionStatus={state.connectionStatus} />}
