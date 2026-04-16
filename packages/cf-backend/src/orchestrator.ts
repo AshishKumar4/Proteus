@@ -434,6 +434,15 @@ Summarize what you did after using tools.`;
 
   // ── Think lifecycle hooks ──────────────────────────────────────
 
+  // Tools the model is allowed to call. Think merges workspace tools (read, write,
+  // edit, list, find, grep, delete) with ours, bloating the request by ~2800 tokens.
+  // activeTools restricts the model to only our 5 tools + session context tools,
+  // preventing Think's workspace tools from being sent in the request payload.
+  private static readonly ACTIVE_TOOLS = [
+    "execute_tools", "run", "explore", "save_note", "search_memory",
+    "set_context", "load_context", "search_context",
+  ];
+
   beforeTurn(_ctx: TurnContext): TurnConfig | void {
     this._turnToolCalls = [];
     this._turnStepCount = 0;
@@ -441,6 +450,7 @@ Summarize what you did after using tools.`;
     this._turnHadError = false;
     this._firstChunkReceived = false;
     this.logActivity("beforeturn", "streamText() called next");
+    return { activeTools: OrchestratorAgent.ACTIVE_TOOLS };
   }
 
   onChunk(_ctx: ChunkContext): void {

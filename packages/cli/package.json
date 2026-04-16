@@ -6,8 +6,10 @@
     "proteus": "./bin/cli.ts"
   },
   "dependencies": {
-    "@proteus/core": "workspace:*",
+    "@opentui/core": "^0.1.99",
+    "@opentui/react": "^0.1.99",
     "@proteus/cli-backend": "workspace:*",
+    "@proteus/core": "workspace:*",
     "react": "^19.2.5"
   },
   "scripts": {
