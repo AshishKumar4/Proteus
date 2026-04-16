@@ -29,7 +29,7 @@ structure RawSqlExec where
   mk ::
   deriving Repr, BEq, Inhabited
 
--- VFS interface — matches SqliteFS from seal/agent-utils.
+-- VFS interface — matches SqliteFS from @proteus/agent-utils.
 -- Backed by a single vfs_files table with 1.8 MB chunking.
 structure VFS where
   mk ::

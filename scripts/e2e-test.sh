@@ -100,16 +100,17 @@ else
   ((FAIL++))
 fi
 
-# 5-tool architecture
-TOOL_ASSIGNS=$(grep -cE 'tools\.(execute_tools|run|explore|save_note|search_memory)\s*=' packages/cf-backend/src/orchestrator.ts 2>/dev/null; true)
-OLD_TOOLS=$(grep -cE 'tools\.(read|write|edit|list|find|grep|delete|shell_exec|list_tools)\s*=' packages/cf-backend/src/orchestrator.ts 2>/dev/null; true)
-TOOL_ASSIGNS=${TOOL_ASSIGNS:-0}
-OLD_TOOLS=${OLD_TOOLS:-0}
-if [ "$TOOL_ASSIGNS" -ge 4 ] && [ "$OLD_TOOLS" -eq 0 ]; then
-  RESULTS+=("${GREEN}✅ PASS${NC}: 5-tool architecture (execute_tools + run + explore + save_note + search_memory)")
+# 5-tool architecture (v2.0: tool construction lives in @proteus/core/tools/builtins)
+REGISTRY_TOOLS=$(grep -cE "'(execute_tools|run|explore|save_note|search_memory)'" packages/core/src/tools/registry.ts 2>/dev/null; echo 0 | head -1)
+REGISTRY_TOOLS=$(printf '%s' "$REGISTRY_TOOLS" | head -n 1)
+CF_USES_FACTORY=$(grep -cE 'buildBuiltinTools\(\{' packages/cf-backend/src/orchestrator.ts 2>/dev/null || printf 0)
+CLI_USES_FACTORY=$(cat packages/cli/src/chat-loop.ts packages/cli/src/tui/chat-app.tsx 2>/dev/null | grep -cE 'buildBuiltinTools\(\{')
+LEGACY_FACTORY=$(cat packages/cf-backend/src/orchestrator.ts packages/cli/src/chat-loop.ts packages/cli/src/tui/chat-app.tsx 2>/dev/null | grep -cE 'buildAgentTools')
+if [ "${REGISTRY_TOOLS:-0}" -ge 5 ] 2>/dev/null && [ "${CF_USES_FACTORY:-0}" -ge 1 ] 2>/dev/null && [ "${CLI_USES_FACTORY:-0}" -ge 2 ] 2>/dev/null && [ "${LEGACY_FACTORY:-0}" -eq 0 ] 2>/dev/null; then
+  RESULTS+=("${GREEN}✅ PASS${NC}: 5-tool architecture (registry + CF + CLI surfaces consume buildBuiltinTools)")
   ((PASS++))
 else
-  RESULTS+=("${RED}❌ FAIL${NC}: Tool architecture — found $TOOL_ASSIGNS tool assigns, $OLD_TOOLS legacy tools")
+  RESULTS+=("${RED}❌ FAIL${NC}: Tool architecture — registry=$REGISTRY_TOOLS cf=$CF_USES_FACTORY cli=$CLI_USES_FACTORY legacy=$LEGACY_FACTORY")
   ((FAIL++))
 fi
 

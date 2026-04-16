@@ -47,8 +47,8 @@ Write JavaScript to accomplish tasks. Your code runs in a sandboxed Worker with 
   workspace.listTools() → tool list
   workspace.createTool(name, description, code) → "ok"
 
-**tools.*** — your learned tools from the CraftStore (improves over time):
-  tools.<name>(args) — call any crafted tool by name
+**codemode.*** — your learned tools from the CraftStore (improves over time):
+  codemode.<name>(args) — call any crafted tool by name
 
 Use Promise.all for parallel operations. Return a value to see the result.
 
@@ -67,7 +67,7 @@ Save a note to long-term memory (FTS-indexed). Quick persist — no code needed.
 Full-text search over long-term memory. Quick recall — no code needed.
 
 ## Evolution
-Your capabilities improve automatically via CraftStore — good patterns become tools.* APIs inside execute_tools.
+Your capabilities improve automatically via CraftStore — good patterns become codemode.* APIs inside execute_tools.
 Summarize what you did after using tools.`;
 
 // Tool schemas that Proteus registers (execute_tools, run, explore, save_note, search_memory)
