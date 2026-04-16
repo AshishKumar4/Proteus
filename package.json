@@ -10,7 +10,8 @@
     "test": "bun test --cwd packages/core",
     "check": "tsc --noEmit -p packages/core",
     "dev": "cd packages/cf-backend && vite dev",
-    "cli": "bun run packages/cli/bin/cli.ts"
+    "cli": "bun run packages/cli/bin/cli.ts",
+    "verify:lean": "bash scripts/verify-lean.sh"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",

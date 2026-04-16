@@ -18,6 +18,10 @@
     "bindings": [
       { "class_name": "OrchestratorAgent", "name": "OrchestratorAgent" },
       { "class_name": "ExplorationAgent", "name": "ExplorationAgent" }
+      // To enable the Nimbus development environment executor, add:
+      // { "class_name": "NimbusSession", "name": "NIMBUS_SESSION", "script_name": "nimbus" }
+      // Requires deploying the Nimbus Worker (github.com/AshishKumar4/Nimbus)
+      // alongside Proteus. The executor will auto-detect the binding.
     ]
   },
   "migrations": [

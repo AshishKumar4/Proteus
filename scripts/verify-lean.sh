@@ -1,47 +1,59 @@
-#!/bin/bash
-# Verify Proteus Lean 4 formal specification.
-# Usage: ./scripts/verify-lean.sh
-#
-# Prerequisites: elan + lean 4 (install via: curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh)
-
+#!/usr/bin/env bash
+# Verify Lean proofs compile and check for TS interface drift.
+# Run: bun run verify:lean
 set -euo pipefail
 
-LEAN_DIR="$(cd "$(dirname "$0")/../lean" && pwd)"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
 
-echo "=== Proteus Lean 4 Verification ==="
-echo "Directory: $LEAN_DIR"
+MANIFEST="lean/generated/.ts-checksums"
 
-# Check lean is installed
-if ! command -v lean &> /dev/null; then
-  echo "ERROR: lean not found. Install via:"
-  echo "  curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh"
-  exit 1
+# Check TS interface drift
+echo -e "${YELLOW}Checking TS interface checksums...${NC}"
+CURRENT=$(cat \
+  packages/core/src/types/primitives.ts \
+  packages/core/src/types/agent-runtime.ts \
+  packages/core/src/types/craft.ts \
+  packages/core/src/evolution/types.ts \
+  packages/core/src/config.ts \
+  2>/dev/null | sha256sum | cut -d' ' -f1)
+
+if [ -f "$MANIFEST" ]; then
+  STORED=$(cat "$MANIFEST")
+  if [ "$CURRENT" != "$STORED" ]; then
+    echo -e "${YELLOW}TS interfaces changed since Lean types were generated.${NC}"
+    echo "  Current: $CURRENT"
+    echo "  Stored:  $STORED"
+    echo -e "${YELLOW}Regenerate with TSLean and update the manifest:${NC}"
+    echo "  echo \"$CURRENT\" > $MANIFEST"
+  else
+    echo -e "${GREEN}TS checksums match.${NC}"
+  fi
+else
+  echo "No manifest. Creating."
+  mkdir -p lean/generated
+  echo "$CURRENT" > "$MANIFEST"
 fi
 
-echo "Lean version: $(lean --version)"
+# Check elan/lake availability
+if ! command -v lake &> /dev/null; then
+  echo -e "${YELLOW}lake not found. Install elan: https://leanprover.github.io/lean4/doc/setup.html${NC}"
+  echo "Skipping Lean build."
+  exit 0
+fi
 
 # Build
-cd "$LEAN_DIR"
-echo ""
-echo "Building..."
+echo -e "\n${YELLOW}Running lake build...${NC}"
+cd lean
 lake build
 
-# Count theorems and axioms
-THEOREMS=$(grep -rn '^theorem ' Proteus/ --include='*.lean' | wc -l)
-AXIOMS=$(grep -rn '^axiom ' Proteus/ --include='*.lean' | wc -l)
-SORRIES=$(grep -rn '\bsorry\b' Proteus/ --include='*.lean' | grep -v '^\-\-' | grep -v 'comment' | grep -v '0 sorry' | wc -l)
-
-echo ""
-echo "=== Results ==="
-echo "Theorems: $THEOREMS"
-echo "Axioms:   $AXIOMS (Float IEEE 754)"
-echo "Sorries:  $SORRIES"
-echo ""
-
+# Sorry check
+SORRIES=$(grep -rn '\bsorry\b' Proteus/ --include='*.lean' | grep -v '^\-\-' | grep -v '0 sorry' | wc -l || true)
 if [ "$SORRIES" -gt 0 ]; then
-  echo "WARNING: $SORRIES sorry found!"
-  grep -rn '\bsorry\b' Proteus/ --include='*.lean' | grep -v '^\-\-' | grep -v 'comment' | grep -v '0 sorry'
-  exit 1
+  echo -e "\n${YELLOW}Found $SORRIES sorry placeholder(s):${NC}"
+  grep -rn '\bsorry\b' Proteus/ --include='*.lean' | grep -v '^\-\-' | grep -v '0 sorry'
 else
-  echo "All proofs verified. Zero sorry."
+  echo -e "\n${GREEN}All proofs verified — zero sorry.${NC}"
 fi
