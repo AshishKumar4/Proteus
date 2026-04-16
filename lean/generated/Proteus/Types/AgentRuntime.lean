@@ -10,7 +10,7 @@ open TSLean TSLean.Stdlib.HashMap
 
 namespace TSLean.Generated.AgentRuntime
 
--- CraftStore interface — matches seal/agent-utils CraftStore API
+-- CraftStore interface — matches @proteus/agent-utils CraftStore API
 structure CraftStore where
   mk ::
   create : (AssocMap String TSAny) → Unit

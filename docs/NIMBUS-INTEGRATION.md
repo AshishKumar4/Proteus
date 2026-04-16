@@ -199,7 +199,7 @@ For `cli-backend`, Nimbus integration is unnecessary. Bun runs locally with full
 const result = Bun.spawn(["bash", "-c", command], { stdout: "pipe", stderr: "pipe" });
 ```
 
-The CLI tools (`shell_exec`, `execute_code`) should use `Bun.spawn` for real bash. Nimbus is exclusively for the CF backend where there's no real shell.
+The CLI `run` and `execute_tools` (workspace.exec) paths use `Bun.spawn` via agent-utils shell for real bash. Nimbus is exclusively for the CF backend where there's no real shell.
 
 ## 4. Implementation Phases
 

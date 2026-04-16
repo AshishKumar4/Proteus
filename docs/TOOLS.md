@@ -1,12 +1,18 @@
 # Agent Tools — 5-Tool Architecture
 
-The agent exposes exactly **5 top-level tools** to the LLM. All filesystem operations are available as `workspace.*` APIs inside the `execute_tools` codemode sandbox. Crafted tools from the CraftStore are injected as `tools.*`.
+The agent exposes exactly **5 top-level tools** to the LLM. All filesystem operations are available as `workspace.*` APIs inside the `execute_tools` codemode sandbox. Crafted tools from the CraftStore are injected into the same sandbox as `codemode.*` (the default namespace exposed by `@cloudflare/codemode`'s `createCodeTool`).
+
+Both surfaces (Cloudflare Workers and CLI) consume the same factory
+`buildBuiltinTools` from `@proteus/core/tools` — see
+[V2-MIGRATION.md](./V2-MIGRATION.md). The registry and descriptions live in
+`packages/core/src/tools/registry.ts`; neither the CF orchestrator nor the CLI
+chat loop hand-builds tools anymore.
 
 ## Top-Level Tools
 
 | Tool | Purpose | Implementation |
 |------|---------|----------------|
-| `execute_tools` | Codemode sandbox — LLM writes JS with `workspace.*` and `tools.*` APIs | `createExecuteTool({ tools: craftedToolSet, providers, loader })` |
+| `execute_tools` | Codemode sandbox — LLM writes JS with `workspace.*` and `codemode.*` APIs | `createExecuteTool({ tools: craftedToolSet, providers, loader })` |
 | `run` | POSIX shell command with optional executor routing | `shell.exec(command)` or routed via `ExecutionRouter` |
 | `explore` | MCTS tree search for complex subproblems | `runFiber` → `engine.onLifetimeEvolution` → `runMCTS` |
 | `save_note` | Quick memory persist (FTS-indexed) | `memory.append("memory/MEMORY.md")` + `memory.index()` |
@@ -32,20 +38,22 @@ The primary tool. The LLM writes JavaScript code that runs in an isolated Worker
 
 These come from `InlineExecutor` in `packages/core/src/execution/inline.ts`, registered as the `workspace` provider in the `ExecutionRouter`.
 
-### tools.* APIs (dynamically learned)
+### codemode.* APIs (dynamically learned)
 
-Crafted tools from the CraftStore are injected into the codemode sandbox as `tools.*`:
+Crafted tools from the CraftStore are injected into the codemode sandbox as `codemode.*` — the default namespace exposed by `@cloudflare/codemode`'s unnamed provider (`createCodeTool` in `@cloudflare/codemode/dist/ai.js`). Before v2.0 these were documented as `tools.*`, which was the prompt saying one thing while the runtime did another — see [V2-MIGRATION.md](./V2-MIGRATION.md) (finding F1).
 
 ```javascript
 // Inside execute_tools:
-const result = await tools.my_custom_parser({ input: "data" });
+const result = await codemode.my_custom_parser({ input: "data" });
 ```
 
-**How injection works** (orchestrator.ts `getTools()`):
-1. `craftStore.list()` reads all crafted tools from SQLite
-2. Each tool's `code` field (an async arrow function string) is wrapped via `new Function("return " + code)()`
-3. The resulting `craftedToolSet` is passed as the `tools` parameter to `createExecuteTool`
-4. Inside the codemode sandbox, the LLM can call `tools.name(args)`
+**How injection works** (`@proteus/core/tools/builtins.ts` via
+`loadFilteredCraftedTools`):
+1. `craftStore.list()` reads all crafted tools from SQLite.
+2. Each row is filtered by effective score (`DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection`, default 0.2) so decayed or low-quality tools never reach the LLM.
+3. Each passing tool's `code` field (an async arrow function string) is compiled once via `new Function("return " + code)()` on the CF path, or wrapped in `rt.executor.execute(...)` on the CLI path.
+4. The resulting `craftedToolSet` is passed as the `tools` parameter to `createExecuteTool`; codemode wraps it as an unnamed provider → `codemode.*`.
+5. Inside the sandbox, the LLM calls `codemode.name(args)`.
 
 ### Example usage
 
@@ -74,7 +82,7 @@ async () => {
 ```javascript
 // Use a crafted tool
 async () => {
-  const result = await tools.parse_csv({ input: await workspace.readFile("data.csv") });
+  const result = await codemode.parse_csv({ input: await workspace.readFile("data.csv") });
   await workspace.saveNote(`Parsed ${result.rows} rows from data.csv`);
   return result;
 }

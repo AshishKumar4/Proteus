@@ -9,7 +9,7 @@ namespace Proteus.Execution.ToolSystem
 /-! ## The 5 tools the LLM sees -/
 
 inductive TopLevelTool where
-  | execute_tools  -- codemode sandbox with workspace.*/tools.* APIs
+  | execute_tools  -- codemode sandbox with workspace.*/codemode.* APIs
   | run            -- POSIX shell command with optional executor routing
   | explore        -- MCTS tree search via durable fiber
   | save_note      -- append to MEMORY.md (FTS-indexed)
