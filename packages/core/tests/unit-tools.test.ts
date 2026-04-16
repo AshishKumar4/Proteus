@@ -132,4 +132,66 @@ describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
     const result = await tool.execute({ code: 'return typeof codemode.weak;' });
     expect(result.result).toBe('undefined');
   });
+
+  test('same-turn created tool callable via codemode.<name> in the fallback path', async () => {
+    // When no LOADER binding is present (CLI / test), builtins.ts uses a Proxy
+    // for the `codemode` global inside execute_tools so that a tool created
+    // by workspace.createTool earlier in the same execute_tools call becomes
+    // callable as codemode.<name> immediately — without waiting for the next
+    // getTools() cache refresh.
+    const { rt } = createTestRuntime();
+    const t = tools(rt);
+    const tool = t.execute_tools as { execute: (a: { code: string }) => Promise<{ result: unknown }> };
+
+    // Seed the craftStore via direct insertion at runtime (simulates the
+    // workspace.createTool path that runs INSIDE the sandbox).
+    const code = `
+      await new Promise(r => setTimeout(r, 0));
+      // Seed the tool — normally this would be via workspace.createTool.
+      // In the test we can't touch rt directly from sandbox, so we test the
+      // scenario by pre-seeding and ensuring it's live-looked-up.
+      return typeof codemode.newbie;
+    `;
+    // Pre-seed so the runtime resolves it live (CraftStore lookup path):
+    rt.craftStore.create({
+      name: 'newbie', description: 'fresh', params: null,
+      code: 'async () => "hi"', scope: 'local',
+    });
+    // Execute_tools was built BEFORE the craftStore was populated, so "newbie"
+    // isn't in the upfront craftedToolSet. Only the live-lookup Proxy can
+    // expose it.
+    // Note: in the real scenario, workspace.createTool does the insert from
+    // INSIDE the sandbox — here we do it from outside for test simplicity,
+    // but the same Proxy path is exercised.
+    const result = await tool.execute({ code });
+    expect(result.result).toBe('function');
+
+    // And it actually works:
+    const result2 = await tool.execute({ code: 'return await codemode.newbie();' });
+    expect(result2.result).toBe('hi');
+  });
+
+  test('newly-created tool NOT pre-existing is live-looked-up but score-filtered names stay undefined', async () => {
+    // Invariant: low-scoring names that were pre-existing at getTools() time
+    // remain undefined in codemode — they shouldn't be resurrected by the
+    // live-lookup Proxy fallback path.
+    const { rt } = createTestRuntime();
+    rt.storage.execRaw(`CREATE TABLE IF NOT EXISTS craft_scores (
+      tool_name TEXT PRIMARY KEY, score REAL NOT NULL DEFAULT 0.5,
+      uses INTEGER NOT NULL DEFAULT 0, last_used_at INTEGER NOT NULL DEFAULT 0
+    )`);
+    rt.craftStore.create({
+      name: 'filteredOut', description: 'weak', params: null,
+      code: 'async () => "nope"', scope: 'local',
+    });
+    rt.storage.sql`INSERT INTO craft_scores (tool_name, score, last_used_at) VALUES ('filteredOut', 0.01, ${Date.now()})`;
+
+    const t = tools(rt);
+    const tool = t.execute_tools as { execute: (a: { code: string }) => Promise<{ result: unknown }> };
+
+    // filteredOut was present when getTools() ran — recorded in preexisting set.
+    // The Proxy must NOT live-look-it-up even though it exists in CraftStore.
+    const result = await tool.execute({ code: 'return typeof codemode.filteredOut;' });
+    expect(result.result).toBe('undefined');
+  });
 });
