@@ -1,18 +1,16 @@
 /**
  * OrchestratorAgent — self-evolving chat agent extending Think.
  *
- * 13 top-level tools the LLM sees:
- *   execute       — codemode sandbox (workspace.*, nimbus.*, sandbox.*, laptop.* APIs)
- *   explore       — MCTS tree search via durable fiber
- *   read/write/edit/list/find/grep/delete — filesystem, optional executor param
- *   shell_exec    — POSIX shell, optional executor param
- *   save_note     — append to MEMORY.md
- *   search_memory — FTS5 search over memory
- *   list_tools    — list built-in + crafted tools
+ * 5-tool architecture:
+ *   execute_tools  — codemode sandbox with workspace.* + tools.* (crafted) APIs
+ *   run            — POSIX shell command with optional executor routing
+ *   explore        — MCTS tree search via durable fiber
+ *   save_note      — append to MEMORY.md (FTS-indexed)
+ *   search_memory  — FTS5 search over long-term memory
  *
- * Filesystem tools accept an optional `executor` string param to route through
- * a specific execution provider (nimbus, sandbox, laptop). Default: workspace.
- * These names overwrite Think's built-in workspace tools.
+ * All filesystem operations (read, write, edit, grep, find, etc.) are available
+ * as workspace.* APIs inside the execute_tools codemode sandbox. Crafted tools
+ * from the CraftStore are injected as tools.* inside the sandbox.
  */
 
 import { callable } from "agents";
@@ -505,9 +503,15 @@ Summarize what you did after using tools.`;
   }
 
   @callable() async getToolList() {
-    const crafted = this.rt.craftStore.list().map(t => ({
-      name: t.name, description: t.description, scope: t.scope,
-    }));
+    const crafted = this.rt.craftStore.list().map(t => {
+      const scoreRow = this.sql<{ score: number; uses: number }>`
+        SELECT score, uses FROM craft_scores WHERE tool_name = ${t.name} LIMIT 1`;
+      return {
+        name: t.name, description: t.description, scope: t.scope,
+        qualityScore: scoreRow[0]?.score ?? 0.5,
+        usageCount: scoreRow[0]?.uses ?? 0,
+      };
+    });
     return {
       builtIn: ["execute_tools", "run", "explore", "save_note", "search_memory"],
       crafted,
