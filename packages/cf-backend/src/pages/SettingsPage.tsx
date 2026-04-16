@@ -46,6 +46,10 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
+  const [mctsC, setMctsC] = useState(1.414);
+  const [mctsIter, setMctsIter] = useState(50);
+  const [mctsDepth, setMctsDepth] = useState(5);
+  const [mctsBranches, setMctsBranches] = useState(3);
 
   useEffect(() => {
     if (state.agentStatus) {
@@ -55,6 +59,18 @@ export default function SettingsPage() {
     }
   }, [state.agentStatus]);
 
+  // Load MCTS config
+  useEffect(() => {
+    if (state.connectionStatus !== "connected") return;
+    state.rpc("getMctsConfig", []).then((cfg: unknown) => {
+      const c = cfg as { explorationConstant: number; maxIterations: number; maxDepth: number; branchBudget: number };
+      setMctsC(c.explorationConstant);
+      setMctsIter(c.maxIterations);
+      setMctsDepth(c.maxDepth);
+      setMctsBranches(c.branchBudget);
+    }).catch(() => {});
+  }, [state.connectionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
@@ -62,13 +78,14 @@ export default function SettingsPage() {
         state.setModel(modelName),
         state.rpc("setDisplayName", [displayName]),
         state.rpc("setSoul", [purpose]),
+        state.rpc("setMctsConfig", [{ explorationConstant: mctsC, maxIterations: mctsIter, maxDepth: mctsDepth, branchBudget: mctsBranches }]),
       ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setSaving(false);
     }
-  }, [state, modelName, displayName, purpose]);
+  }, [state, modelName, displayName, purpose, mctsC, mctsIter, mctsDepth, mctsBranches]);
 
   const handleDangerAction = useCallback(async (action: string) => {
     setConfirmAction(null);
@@ -130,6 +147,26 @@ export default function SettingsPage() {
                 </div>
               ))
             ) : <div className="flex justify-center py-4"><Loader size="sm" /></div>}
+          </div>
+        </Card>
+
+        {/* MCTS Parameters */}
+        <Card title="MCTS Exploration" icon={TreeStructureIcon}>
+          <div className="space-y-4">
+            <Field label={`Exploration constant (C) — ${mctsC.toFixed(3)}`}>
+              <input type="range" min="0.1" max="3" step="0.01" value={mctsC} onChange={e => setMctsC(parseFloat(e.target.value))}
+                className="w-full accent-[var(--c-accent)]" />
+              <div className="flex justify-between text-[10px] p-text-3 mt-0.5"><span>0.1 (exploit)</span><span>3.0 (explore)</span></div>
+            </Field>
+            <Field label="Max iterations">
+              <input type="number" min={1} max={500} value={mctsIter} onChange={e => setMctsIter(parseInt(e.target.value) || 50)} className={inputCls} />
+            </Field>
+            <Field label="Max depth">
+              <input type="number" min={1} max={20} value={mctsDepth} onChange={e => setMctsDepth(parseInt(e.target.value) || 5)} className={inputCls} />
+            </Field>
+            <Field label="Branch budget">
+              <input type="number" min={1} max={10} value={mctsBranches} onChange={e => setMctsBranches(parseInt(e.target.value) || 3)} className={inputCls} />
+            </Field>
           </div>
         </Card>
 

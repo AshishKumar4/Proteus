@@ -43,9 +43,12 @@ export interface MCTSNode {
 	depth: number;
 	value: number;
 	visits: number;
-	status: "open" | "pruned" | "terminal";
+	status: "open" | "pruned" | "terminal" | "failed";
 	action: string;
 	children: MCTSNode[];
+	task?: string;
+	observation?: string;
+	createdAt?: number;
 }
 
 export interface ToolInfo {

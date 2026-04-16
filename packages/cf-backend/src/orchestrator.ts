@@ -342,6 +342,12 @@ After using tools, summarize what you did.`;
         execRaw("DROP TABLE IF EXISTS memory_chunks_fts");
         console.log("[proteus] Migrated memory_chunks to FTS5 schema");
       }
+      // search_nodes: add code_used column if missing (new in this version)
+      const snCols = this.sql<{ name: string }>`PRAGMA table_info(search_nodes)`;
+      if (snCols.length > 0 && !snCols.some(c => c.name === "code_used")) {
+        execRaw("ALTER TABLE search_nodes ADD COLUMN code_used TEXT");
+        console.log("[proteus] Added code_used column to search_nodes");
+      }
     } catch { /* tables don't exist yet — fine */ }
 
     initAllTables(execRaw);
@@ -486,6 +492,39 @@ After using tools, summarize what you did.`;
     const execRaw = (ddl: string) => this.ctx.storage.sql.exec(ddl);
     execRaw("DELETE FROM search_nodes");
     return { cleared: true };
+  }
+
+  @callable() async getLogs(limit = 100) {
+    // Collect evolution events as log entries
+    const events = this.sql<{ id: string; type: string; message: string; created_at: number }>`
+      SELECT id, type, message, created_at FROM evolution_events ORDER BY created_at DESC LIMIT ${limit}`;
+    return events.map(e => ({
+      id: e.id,
+      time: e.created_at,
+      type: e.type.includes("error") ? "error" as const : "evolution" as const,
+      message: `[${e.type}] ${e.message}`,
+    }));
+  }
+
+  @callable() async getMctsConfig() {
+    const rows = this.sql<{ key: string; value: string }>`
+      SELECT key, value FROM agent_config WHERE key IN ('mcts_c', 'mcts_iterations', 'mcts_depth', 'mcts_branches')`;
+    const cfg: Record<string, string> = {};
+    for (const r of rows) cfg[r.key] = r.value;
+    return {
+      explorationConstant: parseFloat(cfg.mcts_c ?? "1.414"),
+      maxIterations: parseInt(cfg.mcts_iterations ?? "50"),
+      maxDepth: parseInt(cfg.mcts_depth ?? "5"),
+      branchBudget: parseInt(cfg.mcts_branches ?? "3"),
+    };
+  }
+
+  @callable() async setMctsConfig(config: { explorationConstant?: number; maxIterations?: number; maxDepth?: number; branchBudget?: number }) {
+    if (config.explorationConstant !== undefined) this.sql`INSERT OR REPLACE INTO agent_config (key, value) VALUES ('mcts_c', ${String(config.explorationConstant)})`;
+    if (config.maxIterations !== undefined) this.sql`INSERT OR REPLACE INTO agent_config (key, value) VALUES ('mcts_iterations', ${String(config.maxIterations)})`;
+    if (config.maxDepth !== undefined) this.sql`INSERT OR REPLACE INTO agent_config (key, value) VALUES ('mcts_depth', ${String(config.maxDepth)})`;
+    if (config.branchBudget !== undefined) this.sql`INSERT OR REPLACE INTO agent_config (key, value) VALUES ('mcts_branches', ${String(config.branchBudget)})`;
+    return config;
   }
 
   /**
