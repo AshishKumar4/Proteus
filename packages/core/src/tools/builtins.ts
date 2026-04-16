@@ -103,9 +103,14 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
   const tools: ToolSet = {};
 
   // ── 1. execute_tools ─────────────────────────────────────────────────────
+  // We track pre-existing tool names (regardless of whether they passed the
+  // filter) so the live-lookup Proxy below can respect score-based filtering
+  // while still allowing same-turn createTool() → codemode.<name> invocation.
+  const preexistingCraftNames = new Set<string>();
   const craftedToolSet = loadFilteredCraftedTools(rt, {
     invocation: 'inline-function',
     minScore: deps.minEffectiveScore ?? DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection,
+    recordPreexisting: preexistingCraftNames,
   });
 
   if (deps.codemodeLoader && deps.createExecuteTool) {
@@ -166,14 +171,41 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
           };
           // Expose crafted tools under the `codemode` global to mirror the real
           // codemode sandbox (see @cloudflare/codemode/dist/ai.js:163-178, which
-          // unwraps .execute via extractFns before exposing). Without this
-          // unwrap, the fallback would hand the sandbox `{description, execute}`
-          // objects — making `codemode.<name>(args)` throw — which contradicts
-          // the system prompt.
-          const codemode: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
-          for (const [name, handle] of Object.entries(craftedToolSet)) {
-            codemode[name] = handle.execute;
-          }
+          // unwraps .execute via extractFns before exposing).
+          //
+          // We use a Proxy so the lookup happens at call-time, picking up tools
+          // created via workspace.createTool() earlier in the SAME execute_tools
+          // call. Without this, a newly created tool is not callable until the
+          // next turn (when getTools() rebuilds the cache).
+          const codemode = new Proxy({} as Record<string, (...args: unknown[]) => Promise<unknown>>, {
+            get(_target, prop: string) {
+              // Prefer the upfront-loaded map (applies score filtering).
+              const upfront = craftedToolSet[prop];
+              if (upfront) return upfront.execute;
+              // If the tool WAS present at getTools() time but was filtered out
+              // by the score threshold, it stays inaccessible — don't resurrect
+              // low-quality tools via the live-lookup path.
+              if (preexistingCraftNames.has(prop)) return undefined;
+              // Only for tools NEW since getTools() ran (i.e. created in this
+              // execute_tools call via workspace.createTool), fall back to live
+              // CraftStore lookup so same-turn create-then-use works.
+              const live = rt.craftStore.get(prop);
+              if (!live || !live.code || live.code.startsWith('//')) return undefined;
+              try {
+                const fn = new Function('return ' + live.code)() as (...args: unknown[]) => Promise<unknown>;
+                if (typeof fn !== 'function') return undefined;
+                return (...args: unknown[]) => fn(...args);
+              } catch {
+                return undefined;
+              }
+            },
+            has(_target, prop: string) {
+              if (prop in craftedToolSet) return true;
+              if (preexistingCraftNames.has(prop)) return false;
+              const live = rt.craftStore.get(prop);
+              return !!live;
+            },
+          });
           const fn = new Function(
             'workspace',
             'codemode',

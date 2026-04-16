@@ -35,6 +35,15 @@ export interface CraftedToolsOptions {
   now?: number;
   /** See module docstring. */
   invocation: 'inline-function' | 'executor';
+  /**
+   * If provided, the loader records every crafted tool NAME it observed into
+   * this Set — regardless of whether it passed the score filter. Callers use
+   * this to distinguish "filtered out by score" (in the set but not in the
+   * returned map) from "created this turn, hasn't loaded yet" (not in the set).
+   * The live-lookup Proxy in builtins.ts uses this to respect score filtering
+   * while still allowing same-turn newly-created tools to be callable.
+   */
+  recordPreexisting?: Set<string>;
 }
 
 export function loadFilteredCraftedTools(
@@ -59,6 +68,12 @@ export function loadFilteredCraftedTools(
     for (const r of rows) scores.set(r.tool_name, { score: r.score, lastUsedAt: r.last_used_at });
   } catch {
     // craft_scores may not exist yet on a fresh DB; treat all tools as unscored
+  }
+
+  // Record every name we saw (regardless of whether it passed the filter) so
+  // callers can distinguish "filtered out" from "doesn't exist yet".
+  if (opts.recordPreexisting) {
+    for (const t of tools) opts.recordPreexisting.add(t.name);
   }
 
   for (const t of tools) {
