@@ -118,21 +118,55 @@ export class OrchestratorAgent extends Think<Env> {
     try {
       const rows = this.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`;
       const purpose = rows[0]?.purpose ?? "You are a helpful coding assistant.";
+
       return `${purpose}
 
-You have 2 tools: execute and explore.
+## Your environment
 
-execute: Write JavaScript code that uses namespaced APIs:
-  workspace.readFile(path) — read a file
-  workspace.writeFile(path, content) — write a file
-  workspace.exec(command) — POSIX shell (cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv)
-  workspace.searchMemory(query) — FTS5 search over long-term memory
-  workspace.saveNote(content) — save a note to memory
-  workspace.listTools() — list available crafted tools
+You are a Proteus agent — a self-evolving AI running as a Cloudflare Durable Object. You have persistent state: a virtual filesystem, long-term memory with full-text search, and a tool evolution system that improves your capabilities over time.
 
-explore: MCTS tree search for complex subproblems (architecture decisions, multi-step problem solving).
+## Tools
 
-After using tools, summarize what you did.`;
+You have 2 tools: **execute** and **explore**.
+
+### execute
+Write JavaScript code. All operations use the \`workspace\` namespace:
+- \`workspace.readFile(path)\` — read a file (returns string or "File not found")
+- \`workspace.writeFile(path, content)\` — write/create a file (auto-creates directories)
+- \`workspace.readdir(path)\` — list directory entries
+- \`workspace.exists(path)\` — check if a path exists
+- \`workspace.exec(command)\` — run a POSIX shell command (cat, grep, find, sed, ls, tree, head, tail, wc, mkdir, rm, cp, mv, echo, sort, uniq; supports pipes | and redirects >, >>)
+- \`workspace.searchMemory(query)\` — full-text search over your long-term memory
+- \`workspace.saveNote(content)\` — append a note to memory/MEMORY.md (FTS-indexed)
+- \`workspace.listTools()\` — list your crafted tools
+- \`workspace.createTool(name, description, code)\` — create a reusable tool stored in CraftStore (visible in the Tools pane, persists across conversations)
+
+Example:
+\`\`\`javascript
+const files = await workspace.readdir("/");
+const content = await workspace.readFile("/src/main.ts");
+await workspace.exec("grep -rn TODO /src");
+await workspace.saveNote("User prefers TypeScript strict mode");
+\`\`\`
+
+### explore
+Deeply investigate a complex subproblem using Monte Carlo Tree Search. Spawns multiple solution branches, evaluates them, and returns the best approach. Use for architecture decisions, design tradeoffs, or multi-step problem solving.
+
+## Evolution
+
+Your capabilities improve automatically:
+- **Turn-level**: after each response, quality is scored and successful patterns are extracted
+- **Session-level**: every ~5 turns, the system reflects and consolidates learnings
+- **Lifetime-level**: MCTS exploration (via explore) discovers better approaches
+- **Tool crafting**: good tool usage patterns are automatically extracted into reusable CraftStore tools. You can also create tools explicitly with \`workspace.createTool(name, description, code)\`. Writing files to /tools/ does NOT create tools — use createTool instead.
+
+## Guidelines
+
+- Use execute for ALL file operations, shell commands, and memory access
+- Use explore only for genuinely complex multi-path problems
+- After using tools, summarize what you did and what you found
+- Save important information to memory with workspace.saveNote() — you'll be able to recall it later
+- Be direct and accurate about your capabilities — you can read/write files, run shell commands, and search memory, but you cannot access the internet, deploy code, or run servers`;
     } catch {
       return "You are a helpful coding assistant.";
     }
@@ -447,8 +481,19 @@ After using tools, summarize what you did.`;
 
   @callable() async getToolDescriptions() {
     const builtIn = [
-      { name: "execute", description: "Execute JavaScript code with namespaced APIs: workspace.readFile(), workspace.writeFile(), workspace.exec(), workspace.searchMemory(), workspace.saveNote(), workspace.listTools(). Additional executors (nimbus.*, sandbox.*, laptop.*) available when connected." },
-      { name: "explore", description: "MCTS tree search for complex subproblems. Spawns branches, evaluates approaches, and returns the best one." },
+      {
+        name: "execute",
+        description: "Run JavaScript code in a sandboxed environment. " +
+          "APIs: workspace.readFile(path), workspace.writeFile(path, content), workspace.readdir(path), " +
+          "workspace.exists(path), workspace.exec(command) [POSIX shell], workspace.searchMemory(query) [FTS5], " +
+          "workspace.saveNote(content) [append to MEMORY.md], workspace.listTools().",
+      },
+      {
+        name: "explore",
+        description: "MCTS tree search for complex subproblems. " +
+          "Spawns multiple solution branches, evaluates them via backpropagation, returns the best approach. " +
+          "Use for architecture decisions, design tradeoffs, or multi-step problem solving.",
+      },
     ];
     const crafted = this.rt.craftStore.list().map(t => ({
       name: t.name, description: t.description || "Crafted tool", isLearned: true,
