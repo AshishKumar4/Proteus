@@ -154,6 +154,18 @@ export function useProteus(agentId?: string) {
     agent.call("getMemoryContent", [])
       .then(c => { setMemoryContent(c as string ?? ""); })
       .catch(() => {});
+    // Merge server-side logs (evolution events) with client-side logs
+    agent.call("getLogs", [50])
+      .then((serverLogs) => {
+        const sl = serverLogs as Array<{ id: string; time: number; type: string; message: string }>;
+        setLogs(prev => {
+          const clientOnly = prev.filter(l => l.type === "connection" || l.type === "info" || !sl.some(s => s.id === l.id));
+          const merged = [...clientOnly, ...sl.map(s => ({ ...s, type: s.type as LogEntry["type"] }))];
+          merged.sort((a, b) => a.time - b.time);
+          return merged.slice(-100);
+        });
+      })
+      .catch(() => {});
   }
 
   // Log tool calls as they appear in messages

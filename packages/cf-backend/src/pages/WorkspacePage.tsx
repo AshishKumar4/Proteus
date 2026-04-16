@@ -267,7 +267,7 @@ function EvolutionTab({ events, onRefresh }: { events: EvolutionEventRow[]; onRe
         </div>
       )}
       {filtered.length === 0 ? (
-        <EmptyTab icon={<SparkleIcon size={28} />} title={events.length === 0 ? "No evolution events yet" : "No events match filter"} hint={events.length === 0 ? "Send a few messages to trigger evolution" : undefined} />
+        <EmptyTab icon={<SparkleIcon size={28} />} title={events.length === 0 ? "No evolution events yet" : "No events match filter"} hint={events.length === 0 ? EMPTY_HINTS.evolution : undefined} />
       ) : filtered.map(e => {
         const scale = TIMESCALE_MAP[e.type] ?? "turn";
         return (
@@ -290,12 +290,21 @@ function EvolutionTab({ events, onRefresh }: { events: EvolutionEventRow[]; onRe
 function EmptyTab({ icon, title, hint }: { icon: React.ReactNode; title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="p-text-3 mb-3">{icon}</div>
+      <div className="p-text-3 mb-3 opacity-60">{icon}</div>
       <p className="text-sm p-text-2">{title}</p>
-      {hint && <p className="text-xs p-text-3 mt-1">{hint}</p>}
+      {hint && <p className="text-xs p-text-3 mt-1.5 max-w-xs leading-relaxed">{hint}</p>}
     </div>
   );
 }
+
+/* Default hints for each empty pane */
+const EMPTY_HINTS: Record<string, string> = {
+  memory: "Your agent will remember important information here. Ask it to remember something!",
+  tools: "Tools your agent learns will appear here. They're extracted from successful conversations.",
+  evolution: "Evolution events will appear as your agent improves over time through MCTS exploration.",
+  mcts: "Exploration trees will appear when the agent uses the explore tool to investigate subproblems.",
+  logs: "Activity from the agent's Durable Object will appear here.",
+};
 
 function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
   const [selectedNode, setSelectedNode] = useState<MCTSNode | null>(null);
@@ -309,7 +318,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
     return () => ro.disconnect();
   }, [selectedNode]);
 
-  if (!mctsTree) return <EmptyTab icon={<GitBranchIcon size={28} />} title="No exploration history" hint="Use the explore tool or trigger evolution" />;
+  if (!mctsTree) return <EmptyTab icon={<GitBranchIcon size={28} />} title="No exploration history" hint={EMPTY_HINTS.mcts} />;
   function countN(n: MCTSNode): number { return 1 + n.children.reduce((s, c) => s + countN(c), 0); }
   function maxD(n: MCTSNode): number { return n.children.length === 0 ? n.depth : Math.max(...n.children.map(maxD)); }
   return (
@@ -327,9 +336,25 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
             <Button variant="ghost" size="sm" onClick={() => setSelectedNode(null)}>Close</Button>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            {([["Action", selectedNode.action || "(root)"], ["Value", selectedNode.value.toFixed(4)], ["Visits", selectedNode.visits], ["Status", selectedNode.status], ["Depth", selectedNode.depth], ["Children", selectedNode.children.length]] as const).map(([k, v]) => (
-              <div key={k} className="contents"><span className="p-text-2">{k}</span><span className="p-text font-mono">{String(v)}</span></div>
-            ))}
+            {(() => {
+              const parentVisits = mctsTree?.visits ?? selectedNode.visits;
+              const uct = selectedNode.visits > 0
+                ? selectedNode.value + 1.414 * Math.sqrt(Math.log(parentVisits) / selectedNode.visits)
+                : Infinity;
+              const scoreColor = selectedNode.value >= 0.7 ? "p-success" : selectedNode.value >= 0.4 ? "p-warning" : "p-danger";
+              return ([
+                ["Action", selectedNode.action || "(root)"],
+                ["Avg Reward", <span className={scoreColor}>{selectedNode.value.toFixed(4)}</span>],
+                ["UCT Score", isFinite(uct) ? uct.toFixed(4) : "\u221e"],
+                ["Visits", selectedNode.visits],
+                ["Status", selectedNode.status],
+                ["Depth", selectedNode.depth],
+                ["Children", selectedNode.children.length],
+                ...(selectedNode.observation ? [["Observation", selectedNode.observation.slice(0, 80) + (selectedNode.observation.length > 80 ? "..." : "")]] : []),
+              ] as [string, React.ReactNode][]).map(([k, v]) => (
+                <div key={k} className="contents"><span className="p-text-2">{k}</span><span className="p-text font-mono">{typeof v === "string" || typeof v === "number" ? String(v) : v}</span></div>
+              ));
+            })()}
           </div>
         </div>
       )}
@@ -360,7 +385,7 @@ function LogsTab({ logs, connectionStatus }: { logs: LogEntry[]; connectionStatu
         </div>
         <ConnectionIndicator status={connectionStatus as "connected" | "connecting" | "disconnected" | "error"} />
       </div>
-      {logs.length === 0 ? <EmptyTab icon={<TerminalIcon size={28} />} title="No activity yet" /> : (
+      {logs.length === 0 ? <EmptyTab icon={<TerminalIcon size={28} />} title="No activity yet" hint={EMPTY_HINTS.logs} /> : (
         <div className="space-y-1 max-h-[calc(100vh-200px)] overflow-y-auto">
           {logs.map(log => (
             <div key={log.id} className="rounded border p-border p-elevated px-2.5 py-1.5 text-xs font-mono">
@@ -531,7 +556,7 @@ export default function WorkspacePage() {
               {activeTab === "Tools" && (
                 <div className="space-y-2 animate-fade-in">
                   {state.tools.length === 0 ? (
-                    <EmptyTab icon={<PackageIcon size={28} />} title="No tools discovered yet" hint="The agent discovers tools as it works" />
+                    <EmptyTab icon={<PackageIcon size={28} />} title="No tools discovered yet" hint={EMPTY_HINTS.tools} />
                   ) : state.tools.map(tool => {
                     const isLearned = tool.scope === "global";
                     return (
@@ -574,7 +599,7 @@ export default function WorkspacePage() {
                       </div>
                     </div>
                   ) : !memorySearch ? (
-                    <EmptyTab icon={<FolderOpenIcon size={28} />} title="No memories yet" hint="Ask the agent to remember something with save_note" />
+                    <EmptyTab icon={<FolderOpenIcon size={28} />} title="No memories yet" hint={EMPTY_HINTS.memory} />
                   ) : state.memory.length === 0 ? (
                     <EmptyTab icon={<MagnifyingGlassIcon size={28} />} title="No results" />
                   ) : state.memory.map((entry, i) => (
