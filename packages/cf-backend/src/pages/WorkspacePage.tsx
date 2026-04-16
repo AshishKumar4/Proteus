@@ -107,19 +107,26 @@ function ToolCallBlock({ toolName, input, output, isRunning, isError }: {
   toolName: string; input?: Record<string, unknown>; output?: unknown; isRunning: boolean; isError: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const startTime = useRef(Date.now());
+  const startTime = useRef<number | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
+  const wasRunning = useRef(false);
 
   useEffect(() => {
     if (isRunning) {
+      // Tool just started running — record the start time
       startTime.current = Date.now();
+      wasRunning.current = true;
       setElapsed(null);
-    } else if (elapsed === null && startTime.current) {
+    } else if (wasRunning.current && startTime.current) {
+      // Tool finished — we actually observed it running, so compute real duration
       setElapsed(Date.now() - startTime.current);
+      wasRunning.current = false;
     }
-  }, [isRunning]); // eslint-disable-line react-hooks/exhaustive-deps
+    // If component mounts with isRunning=false and wasRunning is false,
+    // we never observed the tool running — don't show any duration.
+  }, [isRunning]);
 
-  const durationLabel = elapsed !== null && elapsed > 0 ? `${(elapsed / 1000).toFixed(1)}s` : null;
+  const durationLabel = elapsed !== null && elapsed > 100 ? `${(elapsed / 1000).toFixed(1)}s` : null;
 
   return (
     <div className="my-1.5">
@@ -211,8 +218,9 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
 /* ── Sidebar components ───────────────────────────────────────── */
 
 const EVO_COLORS: Record<string, string> = {
-  craft_discovered: "bg-green-500", mcts_complete: "bg-green-500", reflection: "bg-blue-500",
-  consolidation: "bg-amber-500", scaffold_proposed: "bg-purple-500", mcts_started: "bg-gray-500",
+  turn_complete: "bg-cyan-500", craft_discovered: "bg-green-500", mcts_complete: "bg-green-500",
+  reflection: "bg-blue-500", consolidation: "bg-amber-500", scaffold_proposed: "bg-purple-500",
+  mcts_started: "bg-gray-500",
 };
 
 function EvolutionItem({ event }: { event: EvolutionEventRow }) {
@@ -234,7 +242,7 @@ function EvolutionItem({ event }: { event: EvolutionEventRow }) {
 }
 
 const TIMESCALE_MAP: Record<string, "turn" | "session" | "lifetime"> = {
-  reflection: "turn", craft_discovered: "turn",
+  turn_complete: "turn", reflection: "turn", craft_discovered: "turn",
   consolidation: "session",
   scaffold_proposed: "lifetime", mcts_complete: "lifetime", mcts_started: "lifetime",
 };

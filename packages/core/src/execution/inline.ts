@@ -99,8 +99,34 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
       description: 'List all available tools including dynamically crafted ones.',
       execute: async () => {
         const crafted = craftStore.list();
-        if (crafted.length === 0) return 'No crafted tools. Built-in tools are available via their namespaces.';
-        return crafted.map(t => `- ${t.name}: ${t.description}`).join('\n');
+        if (crafted.length === 0) return 'No crafted tools yet. Use workspace.createTool() to create one.';
+        return crafted.map(t => `- ${t.name}: ${t.description} (score: ${((t as any).qualityScore ?? 0.7).toFixed(2)})`).join('\n');
+      },
+    },
+
+    createTool: {
+      description: 'Create a reusable tool stored in CraftStore. The tool persists across conversations and appears in the Tools pane. Use this instead of writing files to /tools/.',
+      execute: async (name: unknown, description: unknown, code: unknown) => {
+        const toolName = String(name).replace(/[^a-z0-9_]/gi, '_').toLowerCase();
+        if (!toolName || !description || !code) return 'Error: createTool requires name, description, and code arguments.';
+        try {
+          // Check if tool already exists
+          const existing = craftStore.get(toolName);
+          if (existing) {
+            craftStore.update(toolName, { description: String(description), code: String(code) });
+            return `Tool "${toolName}" updated in CraftStore.`;
+          }
+          craftStore.create({
+            name: toolName,
+            description: String(description),
+            code: String(code),
+            scope: 'local',
+            params: null,
+          });
+          return `Tool "${toolName}" created in CraftStore. It will appear in the Tools pane and persist across conversations.`;
+        } catch (err) {
+          return `Error creating tool: ${err instanceof Error ? err.message : String(err)}`;
+        }
       },
     },
   };
@@ -114,6 +140,8 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
   function searchMemory(query: string): Promise<string>;
   function saveNote(content: string): Promise<string>;
   function listTools(): Promise<string>;
+  /** Create a reusable tool in CraftStore. Persists across conversations. Appears in Tools pane. */
+  function createTool(name: string, description: string, code: string): Promise<string>;
 }`;
 
   return {

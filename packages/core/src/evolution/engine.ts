@@ -91,6 +91,13 @@ export class EvolutionEngine {
     // Assess quality: use the judge model if available, else heuristic
     const quality = await this.assessTurnQuality(turn);
 
+    // Always emit a turn_complete event so the Evolution pane shows activity
+    this.emit({
+      type: 'turn_complete' as EvolutionEvent['type'],
+      message: `Turn quality: ${quality.toFixed(2)} | ${turn.toolCalls.length} tool calls | ${turn.steps} steps | ${turn.hadError ? 'had errors' : 'clean'}`,
+      data: { quality, toolCount: turn.toolCalls.length, steps: turn.steps, durationMs: turn.durationMs },
+    });
+
     // Update EMA scores for any crafted tools that were used in this turn.
     const craftedToolNames = turn.toolCalls
       .map(tc => tc.name)
