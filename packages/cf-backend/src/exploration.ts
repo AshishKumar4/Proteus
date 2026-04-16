@@ -61,7 +61,7 @@ export class ExplorationAgent extends Agent<Env> {
       system: "You are an expert agent exploring one approach to solve a task." + toolHints +
         "\n\nIf your approach involves code, include it in a ```js code block.",
       messages: [{ role: "user" as const, content: `Prior context:\n${context}\n\nPropose ONE specific concrete approach. Include a code implementation if applicable.` }],
-      maxTokens: 4096,
+      maxOutputTokens: 4096,
     });
 
     const trimmed = text.trim();
@@ -84,7 +84,7 @@ export class ExplorationAgent extends Agent<Env> {
         role: "user" as const,
         content: `Task: ${task}\n\nTrajectory:\n${trajectory.slice(0, 2000)}\n\nRate 0.0-1.0. Respond ONLY: {"score": <float>, "reason": "<5 words>"}`,
       }],
-      maxTokens: 100,
+      maxOutputTokens: 100,
     });
 
     try {
@@ -106,7 +106,7 @@ export class ExplorationAgent extends Agent<Env> {
         role: "user" as const,
         content: `Task: ${task}\nAttempt: ${traces.map(t => t.text).join("\n")}\n\nWhat specifically went wrong? One sentence.`,
       }],
-      maxTokens: 200,
+      maxOutputTokens: 200,
     });
     return text.trim();
   }
