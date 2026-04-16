@@ -4,10 +4,39 @@
 
 html, body, #root { width: 100%; height: 100%; margin: 0; }
 
+/* ── Proteus accent system (layered on kumo) ───────────────────── */
+
+:root {
+  --p-accent: 265 85% 60%;
+  --p-accent-bright: 265 90% 70%;
+  --p-accent-dim: 265 50% 40%;
+  --p-glow: 265 85% 60%;
+  --p-user-bubble: 265 70% 55%;
+  --p-surface-border: 0 0% 100% / 0.06;
+  --p-surface-hover: 0 0% 100% / 0.04;
+  --p-surface-raised: 0 0% 100% / 0.03;
+}
+
+[data-mode="light"] {
+  --p-accent: 265 75% 50%;
+  --p-accent-bright: 265 80% 58%;
+  --p-accent-dim: 265 45% 35%;
+  --p-glow: 265 75% 50%;
+  --p-user-bubble: 265 65% 50%;
+  --p-surface-border: 0 0% 0% / 0.08;
+  --p-surface-hover: 0 0% 0% / 0.03;
+  --p-surface-raised: 0 0% 0% / 0.02;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────── */
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-kumo-line, oklch(0.38 0 0)); border-radius: 3px; }
-* { scrollbar-width: thin; scrollbar-color: var(--color-kumo-line, oklch(0.38 0 0)) transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--p-surface-border)); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--p-accent) / 0.4); }
+* { scrollbar-width: thin; scrollbar-color: hsl(var(--p-surface-border)) transparent; }
+
+/* ── Chat prose ─────────────────────────────────────────────────── */
 
 .prose-chat {
   font-size: 0.875rem; line-height: 1.625;
@@ -20,12 +49,79 @@ html, body, #root { width: 100%; height: 100%; margin: 0; }
   ol { list-style: decimal; }
 }
 
+/* ── Proteus utility classes ────────────────────────────────────── */
+
+.p-accent { color: hsl(var(--p-accent)); }
+.p-accent-bright { color: hsl(var(--p-accent-bright)); }
+.p-accent-bg { background: hsl(var(--p-accent)); }
+.p-accent-bg-subtle { background: hsl(var(--p-accent) / 0.12); }
+.p-accent-border { border-color: hsl(var(--p-accent) / 0.3); }
+
+.p-user-bubble {
+  background: hsl(var(--p-user-bubble));
+  color: white;
+}
+
+.p-card {
+  background: hsl(var(--p-surface-raised));
+  border: 1px solid hsl(var(--p-surface-border));
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.p-card:hover {
+  border-color: hsl(var(--p-accent) / 0.3);
+  box-shadow: 0 0 20px hsl(var(--p-glow) / 0.08);
+}
+
+.p-card-accent {
+  border-left: 3px solid hsl(var(--p-accent) / 0.5);
+}
+
+.p-surface {
+  background: hsl(var(--p-surface-raised));
+  border: 1px solid hsl(var(--p-surface-border));
+}
+
+.p-input-ring:focus-within {
+  border-color: hsl(var(--p-accent) / 0.5);
+  box-shadow: 0 0 0 3px hsl(var(--p-accent) / 0.12);
+}
+
+.p-hero-gradient {
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, hsl(var(--p-accent) / 0.08) 0%, transparent 70%);
+}
+
+.p-tab-active {
+  color: hsl(var(--p-accent-bright));
+  border-bottom: 2px solid hsl(var(--p-accent-bright));
+  background: hsl(var(--p-accent) / 0.06);
+}
+
+.p-glow-icon {
+  filter: drop-shadow(0 0 8px hsl(var(--p-glow) / 0.5));
+}
+
+.p-gradient-btn {
+  background: linear-gradient(135deg, hsl(var(--p-accent)), hsl(270 80% 50%));
+  color: white;
+  border: none;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.p-gradient-btn:hover { box-shadow: 0 0 16px hsl(var(--p-glow) / 0.3); }
+.p-gradient-btn:disabled { opacity: 0.4; }
+
+/* ── Animations ─────────────────────────────────────────────────── */
+
 @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 @keyframes blink-cursor { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+@keyframes pulse-glow {
+  0%, 100% { filter: drop-shadow(0 0 6px hsl(var(--p-glow) / 0.3)); }
+  50% { filter: drop-shadow(0 0 16px hsl(var(--p-glow) / 0.6)); }
+}
 
 @layer utilities {
   .animate-fade-in { animation: fade-in 0.2s ease-out; }
   .animate-scale-in { animation: scale-in 0.15s ease-out; }
   .animate-blink-cursor { animation: blink-cursor 1s step-end infinite; }
+  .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 }

@@ -30,7 +30,7 @@ const MODELS = [
   { id: "@cf/qwen/qwen2.5-coder-32b-instruct", label: "Qwen 2.5 Coder 32B" },
 ];
 
-/* ── Code block with syntax highlighting via kumo Code ────────── */
+/* ── Code block ───────────────────────────────────────────────── */
 
 function CodeBlock({ children, className }: { children: React.ReactNode; className?: string }) {
   const [copied, setCopied] = useState(false);
@@ -59,7 +59,7 @@ function MarkdownContent({ content }: { content: string }) {
         if (!className) return <code className="bg-kumo-elevated px-1.5 py-0.5 rounded text-xs font-mono" {...props}>{children}</code>;
         return <CodeBlock className={className}>{children}</CodeBlock>;
       },
-      a({ href, children }) { return <a href={href} target="_blank" rel="noopener noreferrer" className="text-kumo-accent hover:underline">{children}</a>; },
+      a({ href, children }) { return <a href={href} target="_blank" rel="noopener noreferrer" className="p-accent hover:underline">{children}</a>; },
       table({ children }) { return <div className="overflow-x-auto my-2"><table className="w-full text-xs border-collapse">{children}</table></div>; },
       th({ children }) { return <th className="border border-kumo-line px-2 py-1 text-left font-medium bg-kumo-elevated">{children}</th>; },
       td({ children }) { return <td className="border border-kumo-line px-2 py-1">{children}</td>; },
@@ -77,7 +77,7 @@ function getMessageText(msg: UIMessage): string {
 function ReasoningBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <Surface className="rounded-lg ring ring-purple-500/20 px-3 py-2 my-1">
+    <div className="rounded-lg px-3 py-2 my-1 p-surface" style={{ borderLeftColor: "hsl(280 60% 50% / 0.5)", borderLeftWidth: 3 }}>
       <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-purple-400 w-full text-left">
         <GearIcon size={12} className="shrink-0" />
         <span className="font-medium">Thinking</span>
@@ -86,7 +86,7 @@ function ReasoningBlock({ text }: { text: string }) {
       <div className={`mt-1 text-xs text-purple-300/70 whitespace-pre-wrap ${!expanded ? "line-clamp-2" : ""}`}>
         {expanded ? text : text.length > 80 ? text.slice(0, 80) + "..." : text}
       </div>
-    </Surface>
+    </div>
   );
 }
 
@@ -97,9 +97,9 @@ function ToolCallBlock({ toolName, input, output, isRunning, isError }: {
   return (
     <div className="my-1.5">
       <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-xs text-kumo-subtle hover:text-kumo-default transition-colors">
-        {isRunning ? <Loader size="sm" /> : isError ? <WrenchIcon size={12} className="text-kumo-danger" /> : <CheckCircleIcon size={12} className="text-kumo-success" />}
+        {isRunning ? <Loader size="sm" /> : isError ? <WrenchIcon size={12} className="text-red-400" /> : <CheckCircleIcon size={12} className="text-green-400" />}
         <span className="font-mono">{toolName}</span>
-        {isRunning && <span className="text-kumo-warning">running...</span>}
+        {isRunning && <span className="text-amber-400">running...</span>}
         {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
       </button>
       {expanded && (
@@ -119,7 +119,7 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
   if (isUser) {
     return (
       <div className="flex justify-end animate-fade-in">
-        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-br-md bg-kumo-contrast text-kumo-inverse leading-relaxed text-sm whitespace-pre-wrap">
+        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-br-md p-user-bubble leading-relaxed text-sm whitespace-pre-wrap shadow-md">
           {getMessageText(message)}
         </div>
       </div>
@@ -136,9 +136,9 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
     return (
       <div className="flex items-center gap-2 animate-fade-in py-1">
         <div className="flex gap-1">
-          <span className="size-1.5 rounded-full bg-kumo-accent animate-bounce [animation-delay:0ms]" />
-          <span className="size-1.5 rounded-full bg-kumo-accent animate-bounce [animation-delay:150ms]" />
-          <span className="size-1.5 rounded-full bg-kumo-accent animate-bounce [animation-delay:300ms]" />
+          <span className="size-1.5 rounded-full animate-bounce [animation-delay:0ms]" style={{ background: "hsl(var(--p-accent))" }} />
+          <span className="size-1.5 rounded-full animate-bounce [animation-delay:150ms]" style={{ background: "hsl(var(--p-accent))" }} />
+          <span className="size-1.5 rounded-full animate-bounce [animation-delay:300ms]" style={{ background: "hsl(var(--p-accent))" }} />
         </div>
         <span className="text-xs text-kumo-inactive">Thinking...</span>
       </div>
@@ -159,7 +159,7 @@ function MessageView({ message, isLast, isStreaming }: { message: UIMessage; isL
           return (
             <div key={i} className="prose-chat text-kumo-default">
               <MarkdownContent content={t} />
-              {isLive && isLastText && <span className="inline-block w-0.5 h-[1em] bg-kumo-accent ml-0.5 align-text-bottom animate-blink-cursor" />}
+              {isLive && isLastText && <span className="inline-block w-0.5 h-[1em] ml-0.5 align-text-bottom animate-blink-cursor" style={{ background: "hsl(var(--p-accent))" }} />}
             </div>
           );
         }
@@ -219,7 +219,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
     return () => ro.disconnect();
   }, [selectedNode]);
 
-  if (!mctsTree) return <EmptyTab icon={<GitBranchIcon size={32} />} text="No exploration history" />;
+  if (!mctsTree) return <EmptyTab icon={<GitBranchIcon size={32} className="p-accent" />} text="No exploration history" />;
   function countN(n: MCTSNode): number { return 1 + n.children.reduce((s, c) => s + countN(c), 0); }
   function maxD(n: MCTSNode): number { return n.children.length === 0 ? n.depth : Math.max(...n.children.map(maxD)); }
   return (
@@ -231,7 +231,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
       </div>
       <div className="flex-1 min-h-0">{dims.w > 0 && <MCTSTree root={mctsTree} width={dims.w} height={dims.h} onNodeClick={setSelectedNode} selectedNode={selectedNode} />}</div>
       {selectedNode && (
-        <Surface className="ring ring-kumo-line rounded-lg p-3 mt-2 animate-fade-in">
+        <div className="p-surface rounded-lg p-3 mt-2 animate-fade-in">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-kumo-default">Node Details</span>
             <Button variant="ghost" size="sm" onClick={() => setSelectedNode(null)}>Close</Button>
@@ -241,7 +241,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
               <div key={k} className="contents"><span className="text-kumo-subtle">{k}</span><span className="text-kumo-default font-mono">{String(v)}</span></div>
             ))}
           </div>
-        </Surface>
+        </div>
       )}
     </div>
   );
@@ -250,7 +250,7 @@ function MCTSTreeTab({ mctsTree }: { mctsTree: MCTSNode | null }) {
 function ModelSelector({ current, onChange }: { current: string; onChange: (id: string) => void }) {
   return (
     <select value={current} onChange={e => onChange(e.target.value)}
-      className="text-xs bg-kumo-base border border-kumo-line rounded-md px-2 py-1 text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring">
+      className="text-xs bg-kumo-elevated border border-kumo-line rounded-md px-2 py-1 text-kumo-default focus:outline-none focus:ring-1" style={{ boxShadow: "none" }}>
       {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
     </select>
   );
@@ -320,7 +320,7 @@ export default function WorkspacePage() {
 
   if (state.connectionStatus === "error") return (
     <div className="h-full flex items-center justify-center">
-      <Empty icon={<WifiSlashIcon size={32} />} title="Connection lost" description="Check your network or restart the server" />
+      <Empty icon={<WifiSlashIcon size={32} className="text-red-400" />} title="Connection lost" description="Check your network or restart the server" />
     </div>
   );
   if (state.connectionStatus === "connecting" && !state.agentStatus) return (
@@ -331,126 +331,149 @@ export default function WorkspacePage() {
   return (
     <div className="h-full flex flex-col">
       {state.connectionStatus === "disconnected" && (
-        <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-kumo-elevated border-b border-kumo-line text-xs text-kumo-warning">
+        <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs text-amber-300" style={{ background: "hsl(40 80% 50% / 0.08)", borderBottom: "1px solid hsl(40 80% 50% / 0.2)" }}>
           <ArrowsClockwiseIcon size={12} className="animate-spin" />Reconnecting...
         </div>
       )}
       <PanelGroup className="flex-1">
+        {/* ── Chat Panel ──────────────────────────────────────── */}
         <Panel minSize={30} defaultSize={42}>
           <div className="flex flex-col h-full border-r border-kumo-line">
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-kumo-line bg-kumo-base">
+            {/* Chat header — slightly raised */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
               <div className="flex items-center gap-2">
                 <ConnectionIndicator status={state.connectionStatus} />
-                <span className="font-medium text-sm text-kumo-default">{as?.displayName || agentId}</span>
+                <span className="font-semibold text-sm text-kumo-default">{as?.displayName || agentId}</span>
                 {state.isStreaming && <Badge variant="primary">streaming</Badge>}
               </div>
               <div className="flex items-center gap-2">
                 {state.messages.length > 0 && <span className="flex items-center gap-1 text-xs text-kumo-subtle"><ChatTextIcon size={12} />{state.messages.length}</span>}
                 <ModelSelector current={as?.model ?? MODELS[0]!.id} onChange={state.setModel} />
                 {state.messages.length > 0 && <Button variant="ghost" shape="square" size="sm" onClick={state.clearHistory} icon={<TrashIcon size={12} />} aria-label="Clear" />}
-                <Link to={`/mcts/${agentId}`} className="flex items-center gap-1 text-xs text-kumo-accent hover:text-kumo-accent/80 transition-colors">
+                <Link to={`/mcts/${agentId}`} className="flex items-center gap-1 text-xs p-accent hover:opacity-80 transition-opacity">
                   <TreeStructureIcon size={12} />MCTS<ArrowSquareOutIcon size={12} />
                 </Link>
               </div>
             </div>
+
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
               {state.messages.length === 0 && !state.isStreaming && (
-                <div className="flex flex-col items-center justify-center h-full"><Empty icon={<BrainIcon size={32} />} title="Send a message to start" /></div>
+                <div className="flex flex-col items-center justify-center h-full">
+                  <BrainIcon size={40} className="p-accent opacity-30 mb-3" />
+                  <p className="text-sm text-kumo-inactive">Send a message to start</p>
+                </div>
               )}
               {state.messages.map((msg, i) => <MessageView key={msg.id} message={msg} isLast={i === state.messages.length - 1} isStreaming={state.isStreaming} />)}
               <div ref={messagesEndRef} />
             </div>
-            {/* Input */}
-            <div className="p-3 border-t border-kumo-line bg-kumo-base">
-              {state.error && <div className="mb-2 text-xs text-kumo-danger bg-kumo-elevated border border-kumo-line rounded-lg px-3 py-1.5">{state.error}</div>}
-              <div className="flex items-end gap-3 rounded-xl border border-kumo-line bg-kumo-base p-3 shadow-sm focus-within:ring-2 focus-within:ring-kumo-ring transition-shadow">
+
+            {/* Input — accent focus ring */}
+            <div className="p-3 border-t border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
+              {state.error && <div className="mb-2 text-xs text-red-400 p-surface rounded-lg px-3 py-1.5" style={{ borderColor: "hsl(0 60% 50% / 0.2)" }}>{state.error}</div>}
+              <div className="flex items-end gap-3 rounded-xl p-surface p-3 shadow-sm p-input-ring transition-all">
                 <InputArea value={chatInput} onValueChange={setChatInput}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   placeholder="Send a message..." disabled={state.connectionStatus !== "connected"} rows={1}
                   className="flex-1 !ring-0 focus:!ring-0 !shadow-none !bg-transparent !outline-none" />
                 {state.isStreaming
                   ? <Button variant="secondary" shape="square" onClick={state.abortChat} icon={<StopIcon size={18} weight="fill" />} aria-label="Stop" className="mb-0.5" />
-                  : <Button variant="primary" shape="square" onClick={handleSend} disabled={!chatInput.trim() || state.connectionStatus !== "connected"} icon={<PaperPlaneRightIcon size={18} />} aria-label="Send" className="mb-0.5" />}
+                  : <button onClick={handleSend} disabled={!chatInput.trim() || state.connectionStatus !== "connected"} className="p-gradient-btn rounded-lg p-2 mb-0.5 cursor-pointer" aria-label="Send"><PaperPlaneRightIcon size={18} /></button>}
               </div>
             </div>
           </div>
         </Panel>
+
         <PanelResizeHandle className="w-[3px] bg-kumo-line/30 hover:bg-kumo-accent/30 transition-colors cursor-col-resize" />
+
+        {/* ── Right Panel ─────────────────────────────────────── */}
         <Panel minSize={25} defaultSize={58}>
           <div className="flex flex-col h-full">
-            <div className="flex items-center border-b border-kumo-line px-1 bg-kumo-base">
+            {/* Tabs — accent active indicator */}
+            <div className="flex items-center border-b border-kumo-line px-1" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
               {TABS.map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
-                  className={`px-3 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px ${activeTab === tab ? "text-kumo-accent border-kumo-accent" : "text-kumo-subtle border-transparent hover:text-kumo-default"}`}>
+                  className={`px-3 py-2.5 text-xs font-medium transition-all border-b-2 -mb-px rounded-t ${
+                    activeTab === tab ? "p-tab-active" : "text-kumo-subtle border-transparent hover:text-kumo-default hover:bg-kumo-elevated/50"
+                  }`}>
                   {tab}
                 </button>
               ))}
             </div>
+
             <div className="flex-1 overflow-y-auto p-4">
+              {/* Identity */}
               {activeTab === "Identity" && (as ? (
                 <div className="space-y-4 animate-fade-in">
                   <div className="flex items-center gap-3 mb-6">
-                    <Surface className="size-12 rounded-xl ring ring-kumo-line flex items-center justify-center"><FingerprintIcon size={24} className="text-kumo-accent" /></Surface>
-                    <div><div className="font-medium text-kumo-default">{as.name}</div><div className="text-xs text-kumo-subtle font-mono">{as.id.slice(0, 16)}...</div></div>
+                    <div className="size-12 rounded-xl flex items-center justify-center p-accent-bg-subtle" style={{ border: "1px solid hsl(var(--p-accent) / 0.2)" }}>
+                      <FingerprintIcon size={24} className="p-accent" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-kumo-default">{as.name}</div>
+                      <div className="text-xs text-kumo-subtle font-mono">{as.id.slice(0, 16)}...</div>
+                    </div>
                   </div>
                   <div className="space-y-0">
                     {([["Purpose", as.purpose], ["Model", MODELS.find(m => m.id === as.model)?.label ?? as.model], ["Scaffold", `v${as.scaffoldVersion}`], ["MCTS Nodes", as.searchNodeCount], ["Crafted Tools", as.craftedToolCount], ["Messages", as.messageCount], ["Created", new Date(as.createdAt).toLocaleString()]] as const).map(([l, v]) => (
                       <div key={l} className="flex items-center justify-between py-2.5 border-b border-kumo-line">
-                        <span className="text-sm text-kumo-subtle">{l}</span><span className="text-sm font-medium text-kumo-default max-w-[60%] text-right">{String(v)}</span>
+                        <span className="text-sm text-kumo-subtle">{l}</span>
+                        <span className="text-sm font-medium text-kumo-default max-w-[60%] text-right">{String(v)}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               ) : <div className="flex items-center justify-center h-32"><Loader /></div>)}
 
+              {/* Tools */}
               {activeTab === "Tools" && (
                 <div className="space-y-2 animate-fade-in">
-                  {state.tools.length === 0 ? <EmptyTab icon={<PackageIcon size={32} />} text="No tools discovered yet" /> : state.tools.map(tool => (
-                    <Surface key={tool.name} className="rounded-lg ring ring-kumo-line p-3">
-                      <div className="flex items-center gap-2 mb-1.5"><PackageIcon size={14} className="text-kumo-accent" /><span className="text-sm font-medium font-mono text-kumo-default">{tool.name}</span></div>
+                  {state.tools.length === 0 ? <EmptyTab icon={<PackageIcon size={32} className="p-accent" />} text="No tools discovered yet" /> : state.tools.map(tool => (
+                    <div key={tool.name} className="p-card p-card-accent rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1.5"><PackageIcon size={14} className="p-accent" /><span className="text-sm font-medium font-mono text-kumo-default">{tool.name}</span></div>
                       <span className="text-xs text-kumo-subtle block">{tool.description}</span>
-                    </Surface>
+                    </div>
                   ))}
                 </div>
               )}
 
+              {/* Memory */}
               {activeTab === "Memory" && (
                 <div className="space-y-3 animate-fade-in">
                   <div className="relative">
                     <MagnifyingGlassIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-kumo-inactive" />
                     <input value={memorySearch} onChange={e => { setMemorySearch(e.target.value); state.searchMemory(e.target.value); }}
-                      placeholder="Search memory..." className="w-full rounded-lg border border-kumo-line bg-kumo-base pl-9 pr-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-1 focus:ring-kumo-ring placeholder:text-kumo-inactive" />
+                      placeholder="Search memory..." className="w-full rounded-lg border border-kumo-line bg-kumo-elevated pl-9 pr-3 py-2 text-sm text-kumo-default focus:outline-none focus:ring-2 placeholder:text-kumo-inactive transition-all" style={{ focusRingColor: "hsl(var(--p-accent) / 0.3)" }} />
                   </div>
                   {!memorySearch && state.memoryContent ? (
-                    <Surface className="rounded-lg ring ring-kumo-line p-3">
+                    <div className="p-card p-card-accent rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-2">
-                        <DatabaseIcon size={14} className="text-kumo-accent" /><span className="text-xs font-mono text-kumo-accent">memory/MEMORY.md</span>
+                        <DatabaseIcon size={14} className="p-accent" /><span className="text-xs font-mono p-accent">memory/MEMORY.md</span>
                         <span className="text-xs text-kumo-inactive ml-auto">{state.memoryContent.length} chars</span>
                       </div>
                       <pre className="text-xs text-kumo-subtle whitespace-pre-wrap max-h-96 overflow-y-auto">{state.memoryContent}</pre>
-                    </Surface>
-                  ) : !memorySearch ? <EmptyTab icon={<FolderOpenIcon size={32} />} text="No memories yet" />
+                    </div>
+                  ) : !memorySearch ? <EmptyTab icon={<FolderOpenIcon size={32} className="p-accent" />} text="No memories yet" />
                   : state.memory.length === 0 ? <EmptyTab icon={<MagnifyingGlassIcon size={32} />} text="No results" />
                   : state.memory.map((entry, i) => (
-                    <Surface key={i} className="rounded-lg ring ring-kumo-line p-3">
-                      <span className="text-xs font-mono text-kumo-accent">{entry.updatedAt}</span>
+                    <div key={i} className="p-card rounded-lg p-3">
+                      <span className="text-xs font-mono p-accent">{entry.updatedAt}</span>
                       <p className="text-xs text-kumo-subtle line-clamp-4 whitespace-pre-wrap mt-1">{entry.content}</p>
-                    </Surface>
+                    </div>
                   ))}
                 </div>
               )}
 
               {activeTab === "MCTS Tree" && <MCTSTreeTab mctsTree={state.mctsTree} />}
 
+              {/* Evolution */}
               {activeTab === "Evolution" && (
                 <div className="animate-fade-in">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2"><ClockIcon size={16} className="text-kumo-subtle" /><span className="text-sm font-medium text-kumo-default">Evolution Timeline</span>{state.evolutionEvents.length > 0 && <Badge variant="secondary">{state.evolutionEvents.length}</Badge>}</div>
+                    <div className="flex items-center gap-2"><ClockIcon size={16} className="text-kumo-subtle" /><span className="text-sm font-semibold text-kumo-default">Evolution Timeline</span>{state.evolutionEvents.length > 0 && <Badge variant="secondary">{state.evolutionEvents.length}</Badge>}</div>
                     <Button variant="secondary" size="sm" onClick={state.refreshEvolution}>Refresh</Button>
                   </div>
-                  {state.evolutionEvents.length === 0 ? <EmptyTab icon={<SparkleIcon size={32} />} text="No evolution events yet" /> : state.evolutionEvents.map(e => <EvolutionItem key={e.id} event={e} />)}
+                  {state.evolutionEvents.length === 0 ? <EmptyTab icon={<SparkleIcon size={32} className="p-accent" />} text="No evolution events yet" /> : state.evolutionEvents.map(e => <EvolutionItem key={e.id} event={e} />)}
                 </div>
               )}
 

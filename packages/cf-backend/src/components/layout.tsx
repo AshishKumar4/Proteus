@@ -34,7 +34,9 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-kumo-elevated text-kumo-default">
-      <aside className={`flex flex-col border-r border-kumo-line bg-kumo-base transition-all duration-200 ${collapsed ? "w-14" : "w-56"}`}>
+      {/* Sidebar — darker than main content for depth */}
+      <aside className={`flex flex-col border-r border-kumo-line bg-kumo-base transition-all duration-200 ${collapsed ? "w-14" : "w-56"}`}
+        style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 8%)" }}>
         <div className="p-3 pb-2">
           {collapsed ? (
             <div className="flex h-8 items-center justify-center">
@@ -43,35 +45,44 @@ export default function Layout() {
           ) : (
             <div className="flex h-8 items-center justify-between">
               <div className="flex items-center gap-2">
-                <BrainIcon size={20} weight="duotone" className="text-kumo-accent" />
+                <BrainIcon size={20} weight="duotone" className="p-accent animate-pulse-glow" />
                 <span className="text-lg font-bold tracking-tight">Proteus</span>
               </div>
               <Button variant="ghost" shape="square" size="sm" onClick={toggle} icon={<SidebarSimpleIcon size={14} />} aria-label="Collapse sidebar" />
             </div>
           )}
         </div>
+
         <nav className="flex-1 px-2 py-1 space-y-0.5">
           {NAV_ITEMS.map(({ to, icon: Icon, label, ...rest }) => (
             <NavLink key={to} to={to} end={"end" in rest}
-              className={({ isActive }) => `flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors ${collapsed ? "justify-center px-0" : ""} ${isActive ? "bg-kumo-accent/15 text-kumo-accent font-medium" : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-elevated"}`}
+              className={({ isActive }) =>
+                `flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-all ${collapsed ? "justify-center px-0" : ""} ${
+                  isActive
+                    ? "p-accent-bg-subtle p-accent font-medium"
+                    : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-elevated"
+                }`
+              }
             >
               <Icon size={16} weight="bold" className="shrink-0" />
               {!collapsed && <span>{label}</span>}
             </NavLink>
           ))}
         </nav>
+
         <div className={`border-t border-kumo-line p-2 flex flex-col gap-2 ${collapsed ? "items-center" : ""}`}>
           <div className={collapsed ? "" : "flex items-center justify-between"}>
             <ModeToggle />
             {!collapsed && <span className="text-xs text-kumo-inactive">v0.1</span>}
           </div>
           {!collapsed && (
-            <div className="flex justify-center">
+            <div className="flex justify-center pb-1">
               <PoweredByCloudflare href="https://developers.cloudflare.com/agents/" />
             </div>
           )}
         </div>
       </aside>
+
       <main className="flex-1 overflow-hidden">
         <Outlet />
       </main>
