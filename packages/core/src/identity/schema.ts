@@ -162,6 +162,15 @@ const DDL = [
     exit_code  INTEGER,
     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
   )`,
+
+  // ── Activity log — real-time turn-level tracing ────────────────
+  `CREATE TABLE IF NOT EXISTS activity_log (
+    id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(9)))),
+    event      TEXT NOT NULL,
+    detail     TEXT,
+    elapsed_ms INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+  )`,
 ];
 
 /** Initialize all agent tables. Idempotent — safe to call on every startup. */

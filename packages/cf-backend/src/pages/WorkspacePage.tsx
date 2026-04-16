@@ -519,7 +519,8 @@ function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
 function LogsTab({ logs, connectionStatus }: { logs: LogEntry[]; connectionStatus: string }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs.length]);
-  const C: Record<string, string> = { connection: "bg-blue-500", tool: "bg-amber-500", evolution: "bg-purple-500", error: "bg-red-500", info: "bg-gray-500" };
+  // info = fast (<1s, green), tool = slow (1-5s, amber), error = very slow (>5s, red)
+  const C: Record<string, string> = { connection: "bg-blue-500", tool: "bg-amber-500", evolution: "bg-purple-500", error: "bg-red-500", info: "bg-emerald-500" };
   return (
     <div className="animate-fade-in space-y-1">
       <div className="flex items-center justify-between mb-3">
