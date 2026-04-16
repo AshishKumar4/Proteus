@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Surface, Empty, InputArea, Loader } from "@cloudflare/kumo";
+import { Button, Empty, InputArea, Loader } from "@cloudflare/kumo";
 import { BrainIcon, ClockIcon, PlusIcon, TrashIcon, PaperPlaneRightIcon } from "@phosphor-icons/react";
 import { useHomeConnection } from "@/hooks/use-proteus";
 import { getKnownAgents, registerAgent, removeAgent, type AgentEntry } from "@/lib/agent-registry";
@@ -9,25 +9,25 @@ function AgentCard({ entry, onClick, onDelete }: {
   entry: AgentEntry; onClick: () => void; onDelete: () => void;
 }) {
   return (
-    <Surface className="relative group rounded-xl ring ring-kumo-line p-4 transition-all hover:ring-kumo-accent/30 cursor-pointer animate-fade-in">
+    <div className="p-card p-card-accent rounded-xl p-4 cursor-pointer animate-fade-in relative group">
       <button onClick={onClick} className="text-left w-full">
         <div className="flex items-center justify-between mb-2">
-          <span className="font-medium text-sm text-kumo-default">{entry.name}</span>
+          <span className="font-semibold text-sm text-kumo-default">{entry.name}</span>
           <span className="flex items-center gap-1.5 text-xs text-kumo-subtle">
             <ClockIcon size={12} />
             {new Date(entry.lastVisited).toLocaleDateString()}
           </span>
         </div>
-        <span className="text-xs text-kumo-subtle line-clamp-2 block">{entry.purpose || "No purpose set"}</span>
+        <p className="text-xs text-kumo-subtle line-clamp-2">{entry.purpose || "No purpose set"}</p>
       </button>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1 rounded text-kumo-inactive hover:text-kumo-danger transition-all"
+        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1 rounded text-kumo-inactive hover:text-red-400 transition-all"
         title="Remove from list"
       >
         <TrashIcon size={12} />
       </button>
-    </Surface>
+    </div>
   );
 }
 
@@ -54,14 +54,17 @@ export default function HomePage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="min-h-full flex flex-col">
-        <div className="flex flex-col items-center justify-center px-6 pt-20 pb-12">
+        {/* Hero with radial gradient */}
+        <div className="flex flex-col items-center justify-center px-6 pt-20 pb-12 p-hero-gradient">
           <div className="flex flex-col items-center w-full max-w-2xl space-y-6">
-            <BrainIcon size={48} weight="duotone" className="text-kumo-accent" />
+            <BrainIcon size={56} weight="duotone" className="p-accent animate-pulse-glow" />
             <div className="text-center space-y-2">
-              <h1 className="text-4xl font-bold tracking-tight text-kumo-default">Proteus</h1>
+              <h1 className="text-5xl font-extrabold tracking-tight text-kumo-default">Proteus</h1>
               <p className="text-sm text-kumo-subtle">Self-evolving AI agents with MCTS-guided exploration</p>
             </div>
-            <Surface className="w-full max-w-xl rounded-xl ring ring-kumo-line p-3 shadow-sm focus-within:ring-2 focus-within:ring-kumo-ring transition-shadow">
+
+            {/* Create input — accent border on focus */}
+            <div className="w-full max-w-xl p-surface rounded-xl p-3 shadow-lg p-input-ring transition-all">
               <div className="flex items-end gap-3">
                 <InputArea
                   value={input}
@@ -75,25 +78,36 @@ export default function HomePage() {
                 {creating ? (
                   <Loader size="sm" className="mb-1" />
                 ) : (
-                  <Button variant="primary" shape="square" onClick={handleCreate} disabled={!input.trim()} icon={<PaperPlaneRightIcon size={18} />} aria-label="Create agent" className="mb-0.5" />
+                  <button
+                    onClick={handleCreate}
+                    disabled={!input.trim()}
+                    className="p-gradient-btn rounded-lg p-2 mb-0.5 cursor-pointer"
+                    aria-label="Create agent"
+                  >
+                    <PaperPlaneRightIcon size={18} />
+                  </button>
                 )}
               </div>
-            </Surface>
+            </div>
+
             {creating && (
-              <div className="flex items-center gap-2 text-xs text-kumo-accent">
+              <div className="flex items-center gap-2 text-xs p-accent">
                 <Loader size="sm" /><span>Creating agent...</span>
               </div>
             )}
+
             <p className="text-xs text-kumo-inactive text-center max-w-md">
               Each agent is a Durable Object with its own scaffold, tools, memory, and MCTS search tree.
             </p>
           </div>
         </div>
+
+        {/* Agent list */}
         <div className="flex-1 px-6 pb-12">
           <div className="max-w-5xl mx-auto">
             {agents.length > 0 && (
               <>
-                <h2 className="text-sm font-medium text-kumo-subtle mb-4 uppercase tracking-wider">Recent Agents</h2>
+                <h2 className="text-xs font-semibold text-kumo-subtle mb-4 uppercase tracking-widest">Recent Agents</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {agents.map(entry => (
                     <AgentCard key={entry.id} entry={entry}
@@ -105,7 +119,7 @@ export default function HomePage() {
               </>
             )}
             {agents.length === 0 && (
-              <Empty icon={<PlusIcon size={32} />} title="No agents yet" description="Describe a mission above to create your first agent" />
+              <Empty icon={<PlusIcon size={32} className="p-accent" />} title="No agents yet" description="Describe a mission above to create your first agent" />
             )}
           </div>
         </div>

@@ -35,12 +35,12 @@ export default function MCTSExplorer() {
 
   return (
     <div className="h-full flex flex-col bg-kumo-elevated">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-kumo-line bg-kumo-base">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
         <div className="flex items-center gap-3">
           <Link to={`/agent/${agentId}`}><Button variant="ghost" size="sm" icon={<ArrowLeftIcon size={14} />}>Back</Button></Link>
           <div className="h-4 w-px bg-kumo-line" />
-          <TreeStructureIcon size={16} className="text-kumo-accent" />
-          <span className="font-medium text-sm text-kumo-default">MCTS Explorer</span>
+          <TreeStructureIcon size={16} className="p-accent" />
+          <span className="font-semibold text-sm text-kumo-default">MCTS Explorer</span>
           {state.agentStatus && <span className="text-xs text-kumo-subtle">- {state.agentStatus.name}</span>}
         </div>
         <div className="flex items-center gap-1">
@@ -62,14 +62,14 @@ export default function MCTSExplorer() {
           <div className="flex items-center justify-center h-full"><div className="flex items-center gap-2 text-sm text-kumo-subtle"><Loader size="sm" />Loading tree...</div></div>
         ) : dims.w > 0 && <MCTSTree root={tree} width={dims.w} height={dims.h} onNodeClick={setSelected} />}
       </div>
-      <div className="flex items-center justify-between px-4 py-2.5 border-t border-kumo-line bg-kumo-base">
+      <div className="flex items-center justify-between px-4 py-2.5 border-t border-kumo-line" style={{ background: "color-mix(in oklch, var(--color-kumo-base) 100%, black 3%)" }}>
         <div className="flex items-center gap-6 text-xs">
           <span className="text-kumo-subtle">Nodes: <span className="text-kumo-default font-medium">{total}</span></span>
           <span className="text-kumo-subtle">Depth: <span className="text-kumo-default font-medium">{depth}</span></span>
           {winner && (
             <>
-              <span className="text-kumo-subtle">Winner: <span className="text-kumo-success font-medium">{winner.value.toFixed(3)}</span></span>
-              <span className={`flex items-center gap-1 ${winner.status === "terminal" ? "text-kumo-success" : "text-kumo-warning"}`}>
+              <span className="text-kumo-subtle">Winner: <span className="text-green-400 font-medium">{winner.value.toFixed(3)}</span></span>
+              <span className={`flex items-center gap-1 ${winner.status === "terminal" ? "text-green-400" : "text-amber-400"}`}>
                 <span className="size-1.5 rounded-full bg-current animate-pulse" />
                 {winner.status === "terminal" ? "Converged" : "Searching..."}
               </span>
