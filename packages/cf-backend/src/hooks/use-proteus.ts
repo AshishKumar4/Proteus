@@ -108,14 +108,15 @@ export function useProteus(agentId?: string) {
     }
   }, [isStreaming, agent, addLog]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Periodic refresh for MCTS tree, evolution events, and memory (every 3s)
+  // Adaptive polling: 1s during streaming for near-real-time logs, 5s when idle
   useEffect(() => {
     if (!isConnected) return;
-    const interval = setInterval(refreshLiveData, 3000);
+    const ms = isStreaming ? 1000 : 5000;
+    const interval = setInterval(refreshLiveData, ms);
     return () => clearInterval(interval);
-  }, [isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isConnected, isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for server broadcasts: MCTS progress + activity-log events
+  // Listen for MCTS progress broadcasts from the server
   useEffect(() => {
     if (!isConnected) return;
     const handler = (event: MessageEvent) => {
@@ -130,13 +131,10 @@ export function useProteus(agentId?: string) {
             .then(events => setEvolutionEvents((events as EvolutionEventRow[]).reverse()))
             .catch(() => {});
         }
-        if (msg.type === "activity-log") {
-          const ms = msg.elapsed as number;
-          // Classify by latency: info <1s, tool 1-5s, error >5s
-          const type: LogEntry["type"] = ms > 5000 ? "error" : ms > 1000 ? "tool" : "info";
-          const detail = msg.detail ? String(msg.detail) : undefined;
-          addLog(type, `[${ms}ms] ${msg.event}`, detail);
-        }
+        // activity-log events are NOT handled here — getLogs() polling is the
+        // single source of truth for activity entries. Handling them via both
+        // WS and polling caused triple-counting (WS IDs are UUIDs, SQL IDs are
+        // hex strings — the dedup logic could never match them).
       } catch { /* not JSON or not our message */ }
     };
     const ws = (agent as unknown as { _ws?: WebSocket })._ws;
@@ -161,12 +159,13 @@ export function useProteus(agentId?: string) {
     agent.call("getMemoryContent", [])
       .then(c => { setMemoryContent(c as string ?? ""); })
       .catch(() => {});
-    // Merge server-side logs (evolution events) with client-side logs
-    agent.call("getLogs", [50])
+    // Server is the single source of truth for activity + evolution logs.
+    // Only client-generated entries (connection lifecycle) are preserved.
+    agent.call("getLogs", [100])
       .then((serverLogs) => {
-        const sl = serverLogs as Array<{ id: string; time: number; type: string; message: string }>;
+        const sl = serverLogs as Array<{ id: string; time: number; type: string; message: string; detail?: string }>;
         setLogs(prev => {
-          const clientOnly = prev.filter(l => l.type === "connection" || l.type === "info" || !sl.some(s => s.id === l.id));
+          const clientOnly = prev.filter(l => l.type === "connection");
           const merged = [...clientOnly, ...sl.map(s => ({ ...s, type: s.type as LogEntry["type"] }))];
           merged.sort((a, b) => a.time - b.time);
           return merged.slice(-100);
