@@ -202,14 +202,14 @@ export function useProteus(agentId?: string) {
     // Tools — use real descriptions
     agent.call("getToolDescriptions", [])
       .then((result) => {
-        const r = result as { builtIn: Array<{ name: string; description: string }>; crafted: Array<{ name: string; description: string; isLearned?: boolean }> };
+        const r = result as { builtIn: Array<{ name: string; description: string }>; crafted: Array<{ name: string; description: string; isLearned?: boolean; qualityScore?: number; usageCount?: number }> };
         const builtInTools: ToolInfo[] = r.builtIn.map(t => ({
           name: t.name, description: t.description, scope: "local" as const,
           qualityScore: 1, usageCount: 0, lastUsed: "",
         }));
         const craftedTools: ToolInfo[] = r.crafted.map(t => ({
           name: t.name, description: t.description, scope: "global" as const,
-          qualityScore: 0.7, usageCount: 0, lastUsed: "",
+          qualityScore: t.qualityScore ?? 0.5, usageCount: t.usageCount ?? 0, lastUsed: "",
         }));
         setTools([...builtInTools, ...craftedTools]);
       })
