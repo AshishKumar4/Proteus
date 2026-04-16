@@ -73,15 +73,6 @@ export class OrchestratorAgent extends Think<Env> {
       this.sql`INSERT INTO activity_log (event, detail, elapsed_ms, created_at)
         VALUES (${event}, ${detail ?? null}, ${elapsed}, ${now})`;
     } catch { /* table may not exist on very first start */ }
-    try {
-      this.broadcast(JSON.stringify({
-        type: "activity-log",
-        event,
-        detail: detail ?? null,
-        elapsed,
-        timestamp: now,
-      }));
-    } catch { /* no connections */ }
   }
 
   private get rt(): AgentRuntime {
@@ -783,26 +774,30 @@ Summarize what you did after using tools.`;
   }
 
   @callable() async getLogs(limit = 100) {
-    // Merge evolution events + activity log, return newest first
+    type LogType = "connection" | "tool" | "evolution" | "error" | "info";
     const evoRows = this.sql<{ id: string; type: string; message: string; created_at: number }>`
       SELECT id, type, message, created_at FROM evolution_events ORDER BY created_at DESC LIMIT ${limit}`;
     const evoLogs = evoRows.map(e => ({
       id: e.id,
       time: e.created_at,
-      type: e.type.includes("error") ? "error" as const : "evolution" as const,
+      type: (e.type.includes("error") ? "error" : "evolution") as LogType,
       message: `[${e.type}] ${e.message}`,
     }));
-    let actLogs: Array<{ id: string; time: number; type: "info"; message: string; detail?: string }> = [];
+    let actLogs: Array<{ id: string; time: number; type: LogType; message: string; detail?: string }> = [];
     try {
       const actRows = this.sql<{ id: string; event: string; detail: string | null; elapsed_ms: number; created_at: number }>`
         SELECT id, event, detail, elapsed_ms, created_at FROM activity_log ORDER BY created_at DESC LIMIT ${limit}`;
-      actLogs = actRows.map(a => ({
-        id: a.id,
-        time: a.created_at,
-        type: "info" as const,
-        message: `[${a.elapsed_ms}ms] ${a.event}`,
-        detail: a.detail ?? undefined,
-      }));
+      actLogs = actRows.map(a => {
+        // Color-code by latency: info (green) <1s, tool (amber) 1-5s, error (red) >5s
+        const type: LogType = a.elapsed_ms > 5000 ? "error" : a.elapsed_ms > 1000 ? "tool" : "info";
+        return {
+          id: a.id,
+          time: a.created_at,
+          type,
+          message: `[${a.elapsed_ms}ms] ${a.event}`,
+          detail: a.detail ?? undefined,
+        };
+      });
     } catch { /* table may not exist yet */ }
     const merged = [...evoLogs, ...actLogs];
     merged.sort((a, b) => b.time - a.time);
