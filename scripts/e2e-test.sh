@@ -100,13 +100,13 @@ else
   ((FAIL++))
 fi
 
-# 2-tool architecture
-TOOL_ASSIGNS=$(grep -cE 'tools\.(execute|explore)\s*=' packages/cf-backend/src/orchestrator.ts 2>/dev/null; true)
-OLD_TOOLS=$(grep -cE 'tools\.(read|write|edit|list|find|grep|delete|shell_exec|save_note|search_memory)\s*=' packages/cf-backend/src/orchestrator.ts 2>/dev/null; true)
+# 5-tool architecture
+TOOL_ASSIGNS=$(grep -cE 'tools\.(execute_tools|run|explore|save_note|search_memory)\s*=' packages/cf-backend/src/orchestrator.ts 2>/dev/null; true)
+OLD_TOOLS=$(grep -cE 'tools\.(read|write|edit|list|find|grep|delete|shell_exec|list_tools)\s*=' packages/cf-backend/src/orchestrator.ts 2>/dev/null; true)
 TOOL_ASSIGNS=${TOOL_ASSIGNS:-0}
 OLD_TOOLS=${OLD_TOOLS:-0}
-if [ "$TOOL_ASSIGNS" -ge 2 ] && [ "$OLD_TOOLS" -eq 0 ]; then
-  RESULTS+=("${GREEN}✅ PASS${NC}: 2-tool architecture (execute + explore only)")
+if [ "$TOOL_ASSIGNS" -ge 4 ] && [ "$OLD_TOOLS" -eq 0 ]; then
+  RESULTS+=("${GREEN}✅ PASS${NC}: 5-tool architecture (execute_tools + run + explore + save_note + search_memory)")
   ((PASS++))
 else
   RESULTS+=("${RED}❌ FAIL${NC}: Tool architecture — found $TOOL_ASSIGNS tool assigns, $OLD_TOOLS legacy tools")
