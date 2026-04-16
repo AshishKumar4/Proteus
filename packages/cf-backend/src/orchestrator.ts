@@ -176,6 +176,7 @@ Summarize what you did after using tools.`;
     if (env.LOADER) {
       try {
         const providers = router?.getProviders() ?? [];
+        console.log(`[proteus] execute_tools: ${providers.length} providers: ${providers.map(p => p.name).join(", ")}`);
 
         // Inject crafted tools so they're callable as tools.* inside codemode
         const craftedToolSet: Record<string, { description: string; execute: Function }> = {};
@@ -188,7 +189,12 @@ Summarize what you did after using tools.`;
                 description: t.description || `Crafted tool: ${t.name}`,
                 execute: new Function("return " + t.code)(),
               };
-            } catch { /* skip broken tools */ }
+            } catch (e) {
+              console.warn(`[proteus] Skipping broken crafted tool "${t.name}":`, (e as Error).message);
+            }
+          }
+          if (Object.keys(craftedToolSet).length > 0) {
+            console.log(`[proteus] Injecting ${Object.keys(craftedToolSet).length} crafted tools: ${Object.keys(craftedToolSet).join(", ")}`);
           }
         } catch { /* CraftStore may not be initialized yet */ }
 
@@ -197,11 +203,60 @@ Summarize what you did after using tools.`;
           providers,
           loader: env.LOADER as WorkerLoader,
         });
+        console.log("[proteus] execute_tools registered successfully");
       } catch (err) {
-        console.warn("[proteus] createExecuteTool failed:", (err as Error).message);
+        console.error("[proteus] createExecuteTool FAILED:", (err as Error).message, (err as Error).stack);
       }
     } else {
-      console.warn("[proteus] LOADER binding unavailable — execute_tools not available");
+      console.warn("[proteus] LOADER binding unavailable — execute_tools will not be registered. " +
+        "Configure worker_loaders in wrangler.jsonc for sandboxed code execution.");
+      // Fallback: register a basic execute_tools that uses new Function()
+      tools.execute_tools = tool({
+        description: "Execute JavaScript code. Available APIs: workspace.readFile(path), workspace.writeFile(path, content), workspace.exec(command), workspace.searchMemory(query), workspace.saveNote(content). (Running in unsandboxed fallback mode.)",
+        inputSchema: jsonSchema<{ code: string }>({
+          type: "object",
+          properties: { code: { type: "string", description: "JavaScript code to execute" } },
+          required: ["code"],
+        }),
+        execute: async (args: { code: string }) => {
+          try {
+            // Wrap workspace APIs as closures accessible from the code
+            const workspaceApi = {
+              readFile: async (path: string) => {
+                const content = await vfs.readFile(path, { encoding: "utf8" });
+                return content ?? `File not found: ${path}`;
+              },
+              writeFile: async (path: string, content: string) => {
+                await vfs.writeFile(path, content);
+                return `Written ${content.length} bytes to ${path}`;
+              },
+              exec: async (command: string) => {
+                const result = await shell.exec(command);
+                if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
+                return result.stdout || "(no output)";
+              },
+              readdir: async (path: string) => vfs.readdir(path),
+              exists: async (path: string) => vfs.exists(path),
+              searchMemory: async (query: string) => {
+                const results = await memory.search(query, 10);
+                return results.map(r => `[${r.path}] ${r.snippet}`).join("\n") || "No results.";
+              },
+              saveNote: async (content: string) => {
+                const ts = new Date().toISOString().split("T")[0];
+                await memory.append("memory/MEMORY.md", `\n### Note (${ts})\n${content}\n`);
+                await memory.index("memory/MEMORY.md");
+                return "Note saved.";
+              },
+            };
+            const fn = new Function("workspace", `return (async () => {\n${args.code}\n})()`);
+            const result = await fn(workspaceApi);
+            return { result: result === undefined ? "(no return value)" : result };
+          } catch (e) {
+            return { result: undefined, error: (e as Error).message };
+          }
+        },
+      });
+      console.log("[proteus] execute_tools registered with new Function() fallback");
     }
 
     // ── 2. run: shell command with optional executor routing ──
@@ -239,8 +294,10 @@ Summarize what you did after using tools.`;
         required: ["task"],
       }),
       execute: async (args: { task: string; budget?: number }) => {
+        console.log(`[proteus] explore called: task="${args.task.slice(0, 80)}", budget=${args.budget ?? "default"}`);
         try {
           return await orchestrator.runFiber(`explore-${Date.now()}`, async (ctx) => {
+            console.log("[proteus] explore fiber started");
             ctx.stash({ task: args.task, phase: "starting" });
             orchestrator.broadcastMctsProgress("explore-starting");
             const session = orchestrator.createMCTSSession();
@@ -250,17 +307,23 @@ Summarize what you did after using tools.`;
               null,
             );
             ctx.stash({ task: args.task, phase: "running" });
+            console.log("[proteus] explore: calling onLifetimeEvolution");
             await orchestrator.engine.onLifetimeEvolution(session);
+            console.log("[proteus] explore: onLifetimeEvolution completed");
             orchestrator.broadcastMctsProgress("explore-completed");
             ctx.stash({ task: args.task, phase: "completed" });
-            const best = orchestrator.sql<{ action: string; value: number }>`
-              SELECT action, value FROM search_nodes WHERE status = 'terminal'
-              ORDER BY value DESC LIMIT 1`;
-            return best.length > 0
-              ? `Exploration complete. Best approach (score ${best[0]!.value.toFixed(2)}): ${best[0]!.action}`
-              : "Exploration complete. Check the MCTS tree for detailed results.";
+            // Check ALL nodes, not just terminal (MCTS may not mark any terminal)
+            const allNodes = orchestrator.sql<{ id: string; action: string; value: number; status: string }>`
+              SELECT id, action, value, status FROM search_nodes ORDER BY value DESC`;
+            console.log(`[proteus] explore: ${allNodes.length} search nodes found`);
+            const best = allNodes.find(n => n.status === "terminal") ?? allNodes[0];
+            if (best && best.action) {
+              return `Exploration complete (${allNodes.length} nodes). Best approach (score ${best.value.toFixed(2)}): ${best.action}`;
+            }
+            return `Exploration complete. ${allNodes.length} nodes explored. Check the MCTS tree for results.`;
           });
         } catch (err) {
+          console.error("[proteus] explore FAILED:", (err as Error).message, (err as Error).stack);
           return `Exploration failed: ${(err as Error).message}`;
         }
       },
