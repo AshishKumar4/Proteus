@@ -16,7 +16,7 @@ import type {
 import type { CraftedTool, CraftScoreEntry } from './craft.js';
 import type { ExecutionRouter } from '../execution/types.js';
 
-/** CraftStore interface — matches seal/agent-utils CraftStore API */
+/** CraftStore interface — matches agent-utils CraftStore API */
 export interface CraftStore {
   create(tool: Omit<CraftedTool, 'createdAt' | 'updatedAt'>): void;
   update(name: string, patch: Partial<CraftedTool>): void;
