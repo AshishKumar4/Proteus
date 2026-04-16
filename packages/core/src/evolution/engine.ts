@@ -32,12 +32,13 @@ import { upsertCraftedTool } from '../craft/conflict.js';
 import { periodicCraftConsolidation } from '../craft/consolidation.js';
 import { updateCraftScores } from '../craft/ema.js';
 
-/** Built-in tool names — crafted tool scoring ignores these */
-const BUILT_IN_TOOL_NAMES = new Set([
-  'search_memory', 'read_file', 'write_file', 'execute_code',
-  'save_note', 'list_tools', 'shell_exec', 'explore',
-  'read', 'write', 'edit', 'list', 'find', 'grep', 'delete',
-]);
+/**
+ * Built-in tool names — crafted-tool scoring ignores these.
+ * v2.0: sourced from the canonical registry so CF and CLI share one truth.
+ * Previously this was a private hand-maintained set that drifted from the
+ * actual 5-tool surface — see docs/V2-MIGRATION.md (F4).
+ */
+import { BUILTIN_TOOL_NAMES as BUILT_IN_TOOL_NAMES } from '../tools/registry.js';
 import { modifyScaffold } from '../scaffold/modify.js';
 import { runMCTS } from '../mcts/engine.js';
 
@@ -131,6 +132,18 @@ export class EvolutionEngine {
       await this.onSessionReflection();
       this.turnsSinceReflection = 0;
     }
+  }
+
+  /**
+   * Fire-and-forget variant. The CF backend calls this from onChatResponse to
+   * avoid blocking Think's TurnQueue while evolution's LLM reflection runs.
+   * Errors are caught and logged, never propagated. Semantically identical to
+   * `void this.onTurnComplete(turn).catch(...)` but centralizes the pattern.
+   */
+  onTurnCompleteAsync(turn: CompletedTurn): void {
+    void this.onTurnComplete(turn).catch(err => {
+      console.error('[proteus] onTurnComplete failed:', err);
+    });
   }
 
   // ── Timescale 2: Session-level (end of conversation or every N turns) ──

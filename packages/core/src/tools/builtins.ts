@@ -64,6 +64,12 @@ export interface BuiltinToolDeps {
   wrapExplore?: (
     fn: (args: { task: string; budget?: number }) => Promise<string>,
   ) => (args: { task: string; budget?: number }) => Promise<string>;
+  /**
+   * Called from inside the explore body at phase transitions so the adapter
+   * can (e.g.) checkpoint via ctx.stash. Fires at 'starting' before MCTS,
+   * 'running' after session setup, and 'completed' after engine returns.
+   */
+  onExplorePhase?: (phase: 'starting' | 'running' | 'completed', task: string) => void;
   /** Filter cutoff override (default: DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection). */
   minEffectiveScore?: number;
 }
@@ -208,14 +214,17 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
   const exploreImpl = async (args: { task: string; budget?: number }): Promise<string> => {
     console.log(`[proteus] explore called: task="${args.task.slice(0, 80)}", budget=${args.budget ?? 'default'}`);
     try {
+      deps.onExplorePhase?.('starting', args.task);
       deps.onMctsProgress?.('explore-starting');
       const session = deps.createMctsSession?.() ?? createInMemorySession();
       await session.appendMessage(
         { id: nanoid(), role: 'user' as const, parts: [{ type: 'text' as const, text: args.task }] },
         null,
       );
+      deps.onExplorePhase?.('running', args.task);
       await engine.onLifetimeEvolution(session);
       deps.onMctsProgress?.('explore-completed');
+      deps.onExplorePhase?.('completed', args.task);
 
       const allNodes = rt.storage.sql<{ id: string; action: string; value: number; status: string }>`
         SELECT id, action, value, status FROM search_nodes ORDER BY value DESC`;
