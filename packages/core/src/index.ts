@@ -71,7 +71,7 @@ export {
   DefaultExecutionRouter,
   createInlineExecutor,
   createNimbusExecutor, type NimbusStub,
-  createContainerExecutor,
+  createContainerExecutor, type ContainerStub,
   createSSHTunnelExecutor,
   type ExecutorCapability, type ExecutorKind, type ExecutorProvider,
   type ExecutorInfo, type ExecutionRouter, type InlineExecutorDeps,

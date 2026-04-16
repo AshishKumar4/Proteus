@@ -13,5 +13,5 @@ export type {
 export { DefaultExecutionRouter } from './router.js';
 export { createInlineExecutor, type InlineExecutorDeps } from './inline.js';
 export { createNimbusExecutor, type NimbusStub } from './nimbus.js';
-export { createContainerExecutor } from './container.js';
+export { createContainerExecutor, type ContainerStub } from './container.js';
 export { createSSHTunnelExecutor } from './ssh.js';

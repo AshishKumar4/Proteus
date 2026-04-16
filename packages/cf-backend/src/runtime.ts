@@ -20,8 +20,11 @@ import type {
   CraftStore as CoreCraftStore, CraftedTool as CoreCraftedTool,
   FiberCtx, ExecutionRouter,
 } from "@proteus/core";
-import { DefaultExecutionRouter, createInlineExecutor, createNimbusExecutor } from "@proteus/core";
-import type { NimbusStub } from "@proteus/core";
+import {
+  DefaultExecutionRouter, createInlineExecutor, createNimbusExecutor,
+  createContainerExecutor, createSSHTunnelExecutor,
+} from "@proteus/core";
+import type { NimbusStub, ContainerStub } from "@proteus/core";
 import { SqliteFS } from "@proteus/agent-utils/vfs";
 import { MemoryStore } from "@proteus/agent-utils/memory";
 import { CraftStore as AgentUtilsCraftStore } from "@proteus/agent-utils/stores";
@@ -33,8 +36,12 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { Think } from "@cloudflare/think";
 import { ExplorationAgent } from "./exploration.js";
 
-/** Extended runtime that also exposes the raw SqliteFS for shell emulation */
-export type CFRuntime = AgentRuntime & { sqliteFS: SqliteFS };
+/** Extended runtime that also exposes the raw SqliteFS for shell emulation
+ *  and the SSH executor for tunnel socket management */
+export type CFRuntime = AgentRuntime & {
+  sqliteFS: SqliteFS;
+  sshExecutor: ReturnType<typeof createSSHTunnelExecutor>;
+};
 
 /**
  * Build a full AgentRuntime from a Think agent's DO context.
@@ -87,7 +94,31 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
       console.warn("[proteus] Failed to register NimbusExecutor:", (err as Error).message);
     }
   }
-  // sandbox/laptop registered when bindings become available
+
+  // Register Container executor if the CONTAINER DO binding is available.
+  // The binding is a DurableObjectNamespace — we derive a per-agent container ID.
+  if (env.CONTAINER) {
+    try {
+      const containerNs = env.CONTAINER as {
+        idFromName(name: string): { toString(): string };
+        get(id: unknown): ContainerStub;
+      };
+      const containerId = containerNs.idFromName(agent.name);
+      const containerStub = containerNs.get(containerId);
+      executionRouter.register(createContainerExecutor(containerStub));
+      console.log("[proteus] ContainerExecutor registered");
+    } catch (err) {
+      console.warn("[proteus] Failed to register ContainerExecutor:", (err as Error).message);
+    }
+  } else {
+    // Register stub so it shows in the Executors tab with a "not configured" status
+    executionRouter.register(createContainerExecutor());
+  }
+
+  // Register SSH tunnel executor — always available as a target, but only
+  // "connected" when a user's tunnel WebSocket attaches via setSocket().
+  const sshExecutor = createSSHTunnelExecutor();
+  executionRouter.register(sshExecutor);
 
   return {
     storage: { vfs, sql: sql as unknown as CoreSqlExecutor, execRaw },
@@ -96,6 +127,7 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
     abortBranch: createFacetAborter(agent),
     executionRouter,
     sqliteFS,
+    sshExecutor,
   };
 }
 
