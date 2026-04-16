@@ -26,7 +26,7 @@ export interface RawSqlExec {
 }
 
 /**
- * VFS interface — matches SqliteFS from seal/agent-utils.
+ * VFS interface — matches SqliteFS from agent-utils.
  * Backed by a single vfs_files table with 1.8 MB chunking.
  */
 export interface VFS {
