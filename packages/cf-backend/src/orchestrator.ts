@@ -452,10 +452,16 @@ export class OrchestratorAgent extends Think<Env> {
     // duplicates in crafted_tools + craft_scores left over from pre-v2
     // code that lowercased names. Gated by _v2_codegen_migration_done.
     try {
-      const report = migrateCraftedToolDuplicates(
-        this.sql as unknown as Parameters<typeof migrateCraftedToolDuplicates>[0],
-        execRaw,
-      );
+      // Wrap `this.sql` in a closure that preserves the `this` binding.
+      // `.bind()` produces a function whose `this` is the agent, but the
+      // agents SDK sql method dereferences `this.ctx` which loses the
+      // Think-class this somehow when routed through the bound function;
+      // a direct closure side-steps that.
+      const agent = this;
+      const sqlForMigration = ((strings: TemplateStringsArray, ...values: unknown[]) =>
+        agent.sql(strings, ...values as Parameters<typeof agent.sql>[1][])
+      ) as unknown as Parameters<typeof migrateCraftedToolDuplicates>[0];
+      const report = migrateCraftedToolDuplicates(sqlForMigration, execRaw);
       if (report.ranMigration && report.mergedGroups > 0) {
         console.log(
           `[proteus] v2.1 duplicate migration: merged ${report.mergedGroups} group(s), ` +

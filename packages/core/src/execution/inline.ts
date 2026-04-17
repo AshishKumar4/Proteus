@@ -135,12 +135,28 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
         if (!toolName) return { ok: false, error: 'Tool name must contain at least one identifier character.' };
         if (/^[0-9]/.test(toolName)) toolName = '_' + toolName;
         try {
-          // Upsert: update if exists, else create. CraftStore has no upsert helper,
-          // and `name` is PRIMARY KEY so raw INSERT on existing row would throw.
+          // v2.1(G): exact-name update is an upsert. A DIFFERENT name that
+          // matches case-insensitively is a collision — reject with an
+          // actionable error so the LLM picks a distinct identity. This
+          // pairs with the duplicate-migration in Phase F which retires
+          // legacy lowercased twins.
           const existing = craftStore.get(toolName);
           if (existing) {
             craftStore.update(toolName, { description: String(description), code: String(code) });
             return { ok: true, name: toolName, action: 'updated' };
+          }
+          const caseHit = craftStore.list().find(t =>
+            t.name !== toolName && t.name.toLowerCase() === toolName.toLowerCase(),
+          );
+          if (caseHit) {
+            return {
+              ok: false,
+              error:
+                `A tool named "${caseHit.name}" already exists ` +
+                `(case-insensitive match with "${toolName}"). ` +
+                `Either call that tool as codemode.${caseHit.name}(...) or ` +
+                `pick a genuinely different name.`,
+            };
           }
           craftStore.create({
             name: toolName,
