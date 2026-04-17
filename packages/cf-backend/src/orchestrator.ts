@@ -539,6 +539,21 @@ export class OrchestratorAgent extends Think<Env> {
     catch { return ""; }
   }
 
+  /**
+   * Phase D evidence RPC: returns the LIVE execute_tools.description string —
+   * the exact text the LLM sees in its tool list. Used by the evidence script
+   * to assert that crafted tools appear under `codemode.<name>` in the
+   * generated TypeScript-like interface codemode emits.
+   *
+   * This is introspection-only: it calls the same getTools() the chat loop
+   * does, then extracts the description. No side effects.
+   */
+  @callable() async getExecuteToolsDescription() {
+    const tools = this.getTools();
+    const et = tools.execute_tools as { description?: string } | undefined;
+    return { description: et?.description ?? '' };
+  }
+
   @callable() async getToolDescriptions() {
     // Descriptions sourced from @proteus/core/tools/registry — single truth.
     // Fixes F1 (tools.* → codemode.*) by virtue of the canonical source.
