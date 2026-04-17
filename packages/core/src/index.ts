@@ -85,6 +85,7 @@ export { emaUpdate, effectiveScore, updateCraftScores } from './craft/ema.js';
 export { maybeStoreCraftedTool } from './craft/discovery.js';
 export { periodicCraftConsolidation } from './craft/consolidation.js';
 export { checkConflictsBeforeAdding, upsertCraftedTool } from './craft/conflict.js';
+export { migrateCraftedToolDuplicates, type MigrationReport } from './craft/migrate-duplicates.js';
 
 // Execution layer
 export {

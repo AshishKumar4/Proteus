@@ -38,6 +38,7 @@ import {
   BUILTIN_TOOLS,
   BUILTIN_TOOL_DESCRIPTIONS,
   ACTIVE_TOOLS,
+  migrateCraftedToolDuplicates,
   type CompletedTurn, type ToolCallRecord, type AgentRuntime,
   type SessionWriter, type SessionMessage,
   type CraftedToolExecute,
@@ -446,6 +447,28 @@ export class OrchestratorAgent extends Think<Env> {
     execRaw(`CREATE TABLE IF NOT EXISTS agent_config (
       key TEXT PRIMARY KEY, value TEXT NOT NULL
     )`);
+
+    // v2.1(F): one-time per-agent migration that merges case-collision
+    // duplicates in crafted_tools + craft_scores left over from pre-v2
+    // code that lowercased names. Gated by _v2_codegen_migration_done.
+    try {
+      const report = migrateCraftedToolDuplicates(
+        this.sql as unknown as Parameters<typeof migrateCraftedToolDuplicates>[0],
+        execRaw,
+      );
+      if (report.ranMigration && report.mergedGroups > 0) {
+        console.log(
+          `[proteus] v2.1 duplicate migration: merged ${report.mergedGroups} group(s), ` +
+          `deleted ${report.rowsDeletedCraftedTools} crafted_tools rows, ` +
+          `${report.rowsDeletedCraftScores} craft_scores rows`,
+        );
+        for (const d of report.details) {
+          console.log(`  - ${d.lowerName}: kept "${d.kept}", dropped [${d.dropped.join(', ')}]`);
+        }
+      }
+    } catch (err) {
+      console.error("[proteus] duplicate migration failed:", err);
+    }
 
     try {
       const soul = this.sql<{ purpose: string }>`SELECT purpose FROM agent_soul LIMIT 1`;
