@@ -40,8 +40,10 @@ import {
   ACTIVE_TOOLS,
   type CompletedTurn, type ToolCallRecord, type AgentRuntime,
   type SessionWriter, type SessionMessage,
+  type CraftedToolExecute,
 } from "@proteus/core";
 import { createCFRuntime, type CFRuntime } from "./runtime.js";
+import { createCFCraftedExecute } from "./craft-executor.js";
 
 const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
 const SESSION_REFLECTION_INTERVAL = 5; // turns between session reflections
@@ -67,6 +69,11 @@ export class OrchestratorAgent extends Think<Env> {
   // ── Tool cache: avoid rebuilding 5-tool ToolSet + codemode types every turn ──
   private _cachedTools: ToolSet | null = null;
   private _cachedToolsKey: string = "";
+
+  // v2.1(C): crafted-tool executor — spawns a per-tool child Worker via
+  // env.LOADER.get(). Persisted on the instance so its internal stub cache
+  // survives getTools() rebuilds. One instance per DO lifetime.
+  private _craftedExecute: CraftedToolExecute | null = null;
 
   // ── Activity logging: persisted + broadcast to Logs pane ──
   private _turnT0 = 0;
@@ -97,6 +104,24 @@ export class OrchestratorAgent extends Think<Env> {
       });
     }
     return this._engine;
+  }
+
+  /**
+   * v2.1(C): lazy crafted-tool executor. Bound once per DO lifetime so the
+   * per-tool LOADER stub cache survives getTools() rebuilds.
+   */
+  private getCraftedExecute(): CraftedToolExecute {
+    if (!this._craftedExecute) {
+      const env = this.env as Env & Record<string, unknown>;
+      if (!env.LOADER) {
+        throw new Error("CF runtime missing LOADER binding — check wrangler.jsonc worker_loaders");
+      }
+      this._craftedExecute = createCFCraftedExecute(
+        env.LOADER as unknown as Parameters<typeof createCFCraftedExecute>[0],
+        this.ctx.id.toString(),
+      );
+    }
+    return this._craftedExecute;
   }
 
   // ── Model resolution ───────────────────────────────────────────
@@ -223,6 +248,10 @@ export class OrchestratorAgent extends Think<Env> {
         engine: this.engine,
         codemodeLoader: env.LOADER,
         createExecuteTool: createExecuteTool as unknown as Parameters<typeof buildBuiltinTools>[0]["createExecuteTool"],
+        // v2.1(C): crafted tools execute in per-tool child Workers via LOADER.
+        // Replaces the broken host-side `new Function()` path — the production
+        // failure mode was V8 "Code generation from strings disallowed".
+        craftedToolExecute: this.getCraftedExecute(),
         onMctsProgress: (phase, iteration, budget) => this.broadcastMctsProgress(phase, iteration, budget),
         createMctsSession: () => this.createMCTSSession(),
         onExplorePhase: (phase, task) => {
