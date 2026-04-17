@@ -24,6 +24,7 @@ import type { SessionWriter } from '../mcts/record-node.js';
 import { BUILTIN_TOOL_DESCRIPTIONS } from './registry.js';
 import { loadFilteredCraftedTools } from './crafted.js';
 import type { CraftedToolExecute } from './crafted-executor.js';
+import { effectiveScore } from '../craft/ema.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { nanoid } from '../utils/nanoid.js';
 
@@ -92,6 +93,61 @@ export interface BuiltinToolDeps {
   craftedToolExecute?: CraftedToolExecute;
 }
 
+/**
+ * Build the crafted-tool map using a platform-correct executor factory.
+ * Drops the host-side `new Function` path entirely — each tool's execute is
+ * produced by `craftedToolExecute(tool)` which dispatches appropriately for
+ * the runtime (LOADER Worker on CF, `new Function` on Node).
+ *
+ * Filter semantics match `loadFilteredCraftedTools`: effective-score >=
+ * minScore, comment-only code dropped, every observed name recorded into
+ * `preexistingNames`.
+ */
+function buildCraftedToolSetFromExecute(
+  rt: AgentRuntime,
+  factory: CraftedToolExecute,
+  minScore: number,
+  preexistingNames: Set<string>,
+): Record<string, { description: string; execute: (...args: unknown[]) => Promise<unknown> }> {
+  const out: Record<string, { description: string; execute: (...args: unknown[]) => Promise<unknown> }> = {};
+  let list;
+  try {
+    list = rt.craftStore.list();
+  } catch {
+    return out;
+  }
+
+  const now = Date.now();
+  const scores = new Map<string, { score: number; lastUsedAt: number }>();
+  try {
+    const rows = rt.storage.sql<{ tool_name: string; score: number; last_used_at: number }>`
+      SELECT tool_name, score, last_used_at FROM craft_scores`;
+    for (const r of rows) scores.set(r.tool_name, { score: r.score, lastUsedAt: r.last_used_at });
+  } catch {
+    // craft_scores may not exist yet; treat all tools as unscored
+  }
+
+  for (const t of list) preexistingNames.add(t.name);
+
+  for (const t of list) {
+    if (!t.code || t.code.startsWith('//')) continue;
+    const s = scores.get(t.name);
+    if (s) {
+      const eff = effectiveScore(s.score, s.lastUsedAt, now);
+      if (eff < minScore) continue;
+    }
+    const description = t.description || `Crafted tool: ${t.name}`;
+    try {
+      const execute = factory({ name: t.name, description, code: t.code });
+      out[t.name] = { description, execute: async (arg: unknown) => execute(arg) };
+    } catch (err) {
+      console.warn(`[proteus] Skipping broken crafted tool "${t.name}":`, (err as Error).message);
+    }
+  }
+
+  return out;
+}
+
 /** Default in-memory SessionWriter when no backend-specific one is provided. */
 function createInMemorySession(): SessionWriter {
   const messages: Array<{ message: { id: string; role: string; parts: unknown[] }; parentId: string | null }> = [];
@@ -125,11 +181,18 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
   // filter) so the live-lookup Proxy below can respect score-based filtering
   // while still allowing same-turn createTool() → codemode.<name> invocation.
   const preexistingCraftNames = new Set<string>();
-  const craftedToolSet = loadFilteredCraftedTools(rt, {
-    invocation: 'inline-function',
-    minScore: deps.minEffectiveScore ?? DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection,
-    recordPreexisting: preexistingCraftNames,
-  });
+  const craftedToolSet = deps.craftedToolExecute
+    ? buildCraftedToolSetFromExecute(
+        rt,
+        deps.craftedToolExecute,
+        deps.minEffectiveScore ?? DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection,
+        preexistingCraftNames,
+      )
+    : loadFilteredCraftedTools(rt, {
+        invocation: 'inline-function',
+        minScore: deps.minEffectiveScore ?? DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection,
+        recordPreexisting: preexistingCraftNames,
+      });
 
   if (deps.codemodeLoader && deps.createExecuteTool) {
     try {
