@@ -146,6 +146,26 @@ async function main() {
   }
   log(`  'double' present: yes`);
 
+  // Phase D evidence: assert the LLM-visible execute_tools description
+  // includes codemode.double — i.e. the crafted tool was wired into the
+  // codemode namespace via createExecuteTool.
+  log('\n--- Phase D: inspect execute_tools.description for codemode.double ---');
+  const desc = await rpc(ws, 'getExecuteToolsDescription', []) as { description: string };
+  log(`  description length: ${desc.description.length}`);
+  // Preview — show the codemode block
+  const codemodeIdx = desc.description.indexOf('codemode:');
+  if (codemodeIdx >= 0) {
+    log(`  codemode block (preview):\n${desc.description.slice(codemodeIdx, codemodeIdx + 400)}`);
+  } else {
+    log(`  description preview:\n${desc.description.slice(0, 800)}`);
+  }
+  const hasCodemodeDouble = desc.description.includes('double');
+  log(`  description mentions "double": ${hasCodemodeDouble}`);
+  if (!hasCodemodeDouble) {
+    log('FAIL: crafted tool not in LLM-visible schema');
+    process.exit(5);
+  }
+
   // Turn 2: invoke via codemode.<name> — this is the Phase C path. The
   // Phase C LOADER executor is wired in getTools() which reruns at the
   // start of this turn (cache invalidated by crafted_tools.updated_at bump).
