@@ -25,6 +25,7 @@ import {
   type ToolCallRecord,
   type ChatEvent,
 } from '@proteus/core';
+import { createNodeCraftedExecute } from '@proteus/cli-backend';
 
 import { StatusBar } from './status-bar.js';
 import { MessageList, type DisplayMessage } from './messages.js';
@@ -74,7 +75,13 @@ function ChatApp({ rt, info: initialInfo, dbSize, llmConfig, refreshInfo, noAuto
 
   // v2.0: same 5-tool surface as CF. Engine required for explore; no
   // codemode/fiber/broadcast → CLI-friendly defaults throughout.
-  const tools: ToolSet = buildBuiltinTools({ rt, engine: engineRef.current });
+  // v2.1(B): craftedToolExecute supplies a Node-side `new Function()` compiler
+  // for crafted tools.
+  const tools: ToolSet = buildBuiltinTools({
+    rt,
+    engine: engineRef.current,
+    craftedToolExecute: createNodeCraftedExecute(),
+  });
 
   const addMessage = useCallback((msg: Omit<DisplayMessage, 'id'>) => {
     const id = `msg-${++msgIdRef.current}`;

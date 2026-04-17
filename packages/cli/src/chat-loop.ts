@@ -19,6 +19,7 @@ import {
   type CompletedTurn,
   type ToolCallRecord,
 } from '@proteus/core';
+import { createNodeCraftedExecute } from '@proteus/cli-backend';
 import {
   printChatBanner, printSlashHelp, printAgentStatus,
   printSearchTree, printToolCall, printToolResult,
@@ -53,7 +54,13 @@ export async function runChatLoop(opts: ChatLoopOpts): Promise<void> {
   // v2.0: same 5-tool surface as CF. No codemodeLoader → new-Function fallback
   // in execute_tools (workspaceApi + crafted codemode.* proxy). No wrapExplore
   // (CLI has no runFiber). Crafted tools filtered by effective-score.
-  const tools: ToolSet = buildBuiltinTools({ rt, engine });
+  // v2.1(B): craftedToolExecute supplies a Node-side `new Function()` compiler
+  // for crafted tools — matches the legacy host-side fast path on Node/Bun.
+  const tools: ToolSet = buildBuiltinTools({
+    rt,
+    engine,
+    craftedToolExecute: createNodeCraftedExecute(),
+  });
 
   printChatBanner(info, Object.keys(tools), !noAutoEvolve);
 
