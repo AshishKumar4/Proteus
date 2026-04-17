@@ -46,6 +46,13 @@ export {
 } from './tools/registry.js';
 export { loadFilteredCraftedTools, type CraftedToolsOptions, type CraftedToolHandle } from './tools/crafted.js';
 export { buildBuiltinTools, type BuiltinToolDeps } from './tools/builtins.js';
+export {
+  codegenDisallowed,
+  toCraftedToolSource,
+  type CraftedToolExecute,
+  type CraftedToolExecuteFn,
+  type CraftedToolSource,
+} from './tools/crafted-executor.js';
 export { buildSystemPrompt, buildSystemPromptSync, type SystemPromptOptions } from './prompt.js';
 
 // Runtime builder (shared across backends)

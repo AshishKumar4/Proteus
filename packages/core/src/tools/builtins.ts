@@ -23,6 +23,7 @@ import type { EvolutionEngine } from '../evolution/engine.js';
 import type { SessionWriter } from '../mcts/record-node.js';
 import { BUILTIN_TOOL_DESCRIPTIONS } from './registry.js';
 import { loadFilteredCraftedTools } from './crafted.js';
+import type { CraftedToolExecute } from './crafted-executor.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { nanoid } from '../utils/nanoid.js';
 
@@ -72,6 +73,23 @@ export interface BuiltinToolDeps {
   onExplorePhase?: (phase: 'starting' | 'running' | 'completed', task: string) => void;
   /** Filter cutoff override (default: DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection). */
   minEffectiveScore?: number;
+  /**
+   * Platform-correct crafted-tool executor factory.
+   *
+   * - CF adapter supplies a LOADER-backed implementation that spawns a child
+   *   Worker per tool via `env.LOADER.get(toolName, factory)`. Modules are
+   *   compiled by workerd, sidestepping V8's codegen ban.
+   * - CLI adapter supplies a `new Function(code)()` implementation. Node/Bun
+   *   allows codegen, so this is fast and safe there.
+   * - Absent: crafted tools are skipped silently (warn). Kept as an escape
+   *   hatch for test runtimes / in-memory fixtures that don't wire an adapter.
+   *
+   * When present, this REPLACES the legacy `loadFilteredCraftedTools({invocation:
+   * 'inline-function'})` host-side `new Function` path. When absent, the legacy
+   * path is retained (Phases B/C fill in the adapters; Phase E removes the
+   * legacy path entirely).
+   */
+  craftedToolExecute?: CraftedToolExecute;
 }
 
 /** Default in-memory SessionWriter when no backend-specific one is provided. */
