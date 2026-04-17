@@ -1,19 +1,20 @@
 /**
- * The canonical 5-tool factory. This replaces the inline tool construction
- * in cf-backend/orchestrator.ts:201-413 and the legacy 6-tool surface in
- * evolution/tools.ts. Both CF and CLI surfaces call this — the single source
- * of truth for the LLM's capability surface.
+ * The canonical 5-tool factory. Both CF and CLI surfaces call this — the
+ * single source of truth for the LLM's capability surface.
  *
  * Tools emitted (in registration order):
- *   1. execute_tools  — codemode sandbox OR new-Function fallback
+ *   1. execute_tools  — requires a createExecuteTool factory (CF: codemode;
+ *                       CLI: Node in-process sandbox from cli-backend).
+ *                       Absent → returns a 'NOT CONFIGURED' error. Core
+ *                       itself does NO codegen.
  *   2. run            — shell via executionRouter, workspace fallback to rt.shell
  *   3. explore        — MCTS via engine.onLifetimeEvolution
  *   4. save_note      — memory.append + memory.index
  *   5. search_memory  — memory.search
  *
  * Platform specifics (codemode loader, fiber wrap, MCTS broadcaster, MCTS
- * session factory) are injected through BuiltinToolDeps so the factory stays
- * portable. CF passes all of them; CLI passes none and gets sensible defaults.
+ * session factory, craftedToolExecute) are injected through BuiltinToolDeps
+ * so the factory stays portable.
  */
 
 import { tool, jsonSchema } from 'ai';
@@ -42,10 +43,9 @@ export interface BuiltinToolDeps {
   /** EvolutionEngine — required for the `explore` tool to trigger MCTS. */
   engine: EvolutionEngine;
   /**
-   * Optional CF codemode loader (env.LOADER). When present, `execute_tools`
-   * is built via createExecuteTool (real Worker sandbox). When absent, falls
-   * back to the new-Function+workspaceApi path — same semantics as the
-   * current CF fallback at orchestrator.ts:258-301, also used by CLI.
+   * Optional loader identifier forwarded into the createExecuteTool factory.
+   * On CF this is env.LOADER (WorkerLoader); on CLI it's an opaque sentinel
+   * to keep the factory branch active. Core does not inspect it.
    */
   codemodeLoader?: unknown;
   /**
