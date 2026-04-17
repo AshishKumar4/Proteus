@@ -19,7 +19,7 @@ import {
   type CompletedTurn,
   type ToolCallRecord,
 } from '@proteus/core';
-import { createNodeCraftedExecute } from '@proteus/cli-backend';
+import { createNodeCraftedExecute, createNodeExecuteToolFactory } from '@proteus/cli-backend';
 import {
   printChatBanner, printSlashHelp, printAgentStatus,
   printSearchTree, printToolCall, printToolResult,
@@ -51,15 +51,21 @@ export async function runChatLoop(opts: ChatLoopOpts): Promise<void> {
   const engine = new EvolutionEngine(rt, { enabled: !noAutoEvolve });
   engine.onEvent(event => printEvolutionEvent(event.type, event.message));
 
-  // v2.0: same 5-tool surface as CF. No codemodeLoader → new-Function fallback
-  // in execute_tools (workspaceApi + crafted codemode.* proxy). No wrapExplore
-  // (CLI has no runFiber). Crafted tools filtered by effective-score.
-  // v2.1(B): craftedToolExecute supplies a Node-side `new Function()` compiler
-  // for crafted tools — matches the legacy host-side fast path on Node/Bun.
+  // v2.0: same 5-tool surface as CF.
+  // v2.1(B): craftedToolExecute supplies a Node-side compiler for crafted tools.
+  // v2.1(E): createExecuteTool is the Node execute-tools factory — core no
+  // longer ships an in-process fallback. A sentinel loader keeps the factory
+  // branch active in buildBuiltinTools.
   const tools: ToolSet = buildBuiltinTools({
     rt,
     engine,
     craftedToolExecute: createNodeCraftedExecute(),
+    createExecuteTool: createNodeExecuteToolFactory({
+      vfs: rt.storage.vfs,
+      memory: rt.memory,
+      shell: rt.shell,
+    }) as never,
+    codemodeLoader: { __cli: true } as unknown,
   });
 
   printChatBanner(info, Object.keys(tools), !noAutoEvolve);

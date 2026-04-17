@@ -44,7 +44,6 @@ export {
   BUILTIN_TOOL_DESCRIPTIONS,
   type BuiltinToolName,
 } from './tools/registry.js';
-export { loadFilteredCraftedTools, type CraftedToolsOptions, type CraftedToolHandle } from './tools/crafted.js';
 export { buildBuiltinTools, type BuiltinToolDeps } from './tools/builtins.js';
 export {
   codegenDisallowed,

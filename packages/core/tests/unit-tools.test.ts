@@ -5,17 +5,62 @@
  */
 
 import { describe, test, expect } from 'bun:test';
+import { tool, jsonSchema } from 'ai';
 import { createTestRuntime } from './helpers.js';
 import {
   buildBuiltinTools,
   BUILTIN_TOOLS,
   BUILTIN_TOOL_DESCRIPTIONS,
   EvolutionEngine,
+  type CraftedToolExecute,
 } from '../src/index.js';
+
+// v2.1(E): core has no in-process fallback. Tests wire the same Node
+// executor factory that cli-backend ships in production.
+const nodeCraftedExecute: CraftedToolExecute = (t) => {
+  let compiled: ((arg: unknown) => Promise<unknown>) | null = null;
+  return async (arg) => {
+    if (!compiled) {
+      const fn = new Function('return (' + t.code + ')')();
+      if (typeof fn !== 'function') throw new Error(`${t.name} not a function`);
+      compiled = fn as (arg: unknown) => Promise<unknown>;
+    }
+    return compiled(arg);
+  };
+};
+
+const nodeExecFactory = (opts: {
+  tools: Record<string, { description: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+}) => {
+  const codemode: Record<string, (arg: unknown) => Promise<unknown>> = {};
+  for (const [n, e] of Object.entries(opts.tools)) {
+    codemode[n] = e.execute as (arg: unknown) => Promise<unknown>;
+  }
+  return tool({
+    description: 'test exec_tools',
+    inputSchema: jsonSchema<{ code: string }>({
+      type: 'object', properties: { code: { type: 'string' } }, required: ['code'],
+    }),
+    execute: async (a: { code: string }) => {
+      try {
+        const fn = new Function('workspace', 'codemode', 'return (async () => { ' + a.code + ' })()');
+        const result = await fn({}, codemode);
+        return { result };
+      } catch (e) {
+        return { result: undefined, error: (e as Error).message };
+      }
+    },
+  });
+};
 
 function tools(rt: ReturnType<typeof createTestRuntime>['rt']) {
   const engine = new EvolutionEngine(rt, { enabled: false });
-  return buildBuiltinTools({ rt, engine });
+  return buildBuiltinTools({
+    rt, engine,
+    craftedToolExecute: nodeCraftedExecute,
+    createExecuteTool: nodeExecFactory as never,
+    codemodeLoader: { __test: true } as unknown,
+  });
 }
 
 describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
@@ -83,9 +128,7 @@ describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
     expect(result).toContain('Error');
   });
 
-  test('execute_tools fallback exposes workspace.* and codemode.* in the sandbox', async () => {
-    // No codemodeLoader is provided, so builtins.ts uses the new-Function
-    // fallback. Verify the injected `workspace` and `codemode` globals exist.
+  test('execute_tools exposes workspace and codemode globals', async () => {
     const { rt } = createTestRuntime();
     const t = tools(rt);
     const tool = t.execute_tools as { execute: (args: { code: string }) => Promise<{ result: unknown }> };
@@ -95,10 +138,7 @@ describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
     expect(result.result).toBe('object,object');
   });
 
-  test('crafted tools become bare callables under codemode.<name> — matches prompt contract', async () => {
-    // Regression gate: the fallback path must unwrap `{description, execute}`
-    // the same way codemode's extractFns does, so `codemode.foo(args)` (per
-    // the system prompt) works verbatim — not `codemode.foo.execute(args)`.
+  test('crafted tools become bare callables under codemode.<name>', async () => {
     const { rt } = createTestRuntime();
     rt.storage.execRaw(`CREATE TABLE IF NOT EXISTS craft_scores (
       tool_name TEXT PRIMARY KEY, score REAL NOT NULL DEFAULT 0.5,
@@ -133,65 +173,7 @@ describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
     expect(result.result).toBe('undefined');
   });
 
-  test('same-turn created tool callable via codemode.<name> in the fallback path', async () => {
-    // When no LOADER binding is present (CLI / test), builtins.ts uses a Proxy
-    // for the `codemode` global inside execute_tools so that a tool created
-    // by workspace.createTool earlier in the same execute_tools call becomes
-    // callable as codemode.<name> immediately — without waiting for the next
-    // getTools() cache refresh.
-    const { rt } = createTestRuntime();
-    const t = tools(rt);
-    const tool = t.execute_tools as { execute: (a: { code: string }) => Promise<{ result: unknown }> };
-
-    // Seed the craftStore via direct insertion at runtime (simulates the
-    // workspace.createTool path that runs INSIDE the sandbox).
-    const code = `
-      await new Promise(r => setTimeout(r, 0));
-      // Seed the tool — normally this would be via workspace.createTool.
-      // In the test we can't touch rt directly from sandbox, so we test the
-      // scenario by pre-seeding and ensuring it's live-looked-up.
-      return typeof codemode.newbie;
-    `;
-    // Pre-seed so the runtime resolves it live (CraftStore lookup path):
-    rt.craftStore.create({
-      name: 'newbie', description: 'fresh', params: null,
-      code: 'async () => "hi"', scope: 'local',
-    });
-    // Execute_tools was built BEFORE the craftStore was populated, so "newbie"
-    // isn't in the upfront craftedToolSet. Only the live-lookup Proxy can
-    // expose it.
-    // Note: in the real scenario, workspace.createTool does the insert from
-    // INSIDE the sandbox — here we do it from outside for test simplicity,
-    // but the same Proxy path is exercised.
-    const result = await tool.execute({ code });
-    expect(result.result).toBe('function');
-
-    // And it actually works:
-    const result2 = await tool.execute({ code: 'return await codemode.newbie();' });
-    expect(result2.result).toBe('hi');
-  });
-
-  test('newly-created tool NOT pre-existing is live-looked-up but score-filtered names stay undefined', async () => {
-    // Invariant: low-scoring names that were pre-existing at getTools() time
-    // remain undefined in codemode — they shouldn't be resurrected by the
-    // live-lookup Proxy fallback path.
-    const { rt } = createTestRuntime();
-    rt.storage.execRaw(`CREATE TABLE IF NOT EXISTS craft_scores (
-      tool_name TEXT PRIMARY KEY, score REAL NOT NULL DEFAULT 0.5,
-      uses INTEGER NOT NULL DEFAULT 0, last_used_at INTEGER NOT NULL DEFAULT 0
-    )`);
-    rt.craftStore.create({
-      name: 'filteredOut', description: 'weak', params: null,
-      code: 'async () => "nope"', scope: 'local',
-    });
-    rt.storage.sql`INSERT INTO craft_scores (tool_name, score, last_used_at) VALUES ('filteredOut', 0.01, ${Date.now()})`;
-
-    const t = tools(rt);
-    const tool = t.execute_tools as { execute: (a: { code: string }) => Promise<{ result: unknown }> };
-
-    // filteredOut was present when getTools() ran — recorded in preexisting set.
-    // The Proxy must NOT live-look-it-up even though it exists in CraftStore.
-    const result = await tool.execute({ code: 'return typeof codemode.filteredOut;' });
-    expect(result.result).toBe('undefined');
-  });
+  // v2.1(E): same-turn codemode.<name> for a NEW tool is no longer supported.
+  // The Proxy live-lookup path used host-side new Function and was removed.
+  // Tools created this turn become available next turn (getTools rebuilds).
 });

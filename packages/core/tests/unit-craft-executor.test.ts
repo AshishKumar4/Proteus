@@ -17,21 +17,51 @@ import {
   EvolutionEngine,
   type CraftedToolExecute,
 } from '../src/index.js';
+import { tool, jsonSchema } from 'ai';
 
-// Phase B ships the CLI executor in @proteus/cli-backend. Reproduce the
-// same logic inline here so core tests stay dep-free (cli-backend is a
-// downstream workspace and importing it would invert the dep graph).
-const createNodeCraftedExecute: () => CraftedToolExecute = () => (tool) => {
+// Inline Node craft executor — matches createNodeCraftedExecute from
+// @proteus/cli-backend. Kept in this test to avoid an inverted package
+// dependency (cli-backend is a downstream workspace).
+const createNodeCraftedExecute: () => CraftedToolExecute = () => (t) => {
   let compiled: ((arg: unknown) => Promise<unknown>) | null = null;
   return async (arg) => {
     if (!compiled) {
-      const fn = new Function('return (' + tool.code + ')')();
-      if (typeof fn !== 'function') throw new Error(`${tool.name} not a function`);
+      const fn = new Function('return (' + t.code + ')')();
+      if (typeof fn !== 'function') throw new Error(`${t.name} not a function`);
       compiled = fn as (arg: unknown) => Promise<unknown>;
     }
     return compiled(arg);
   };
 };
+
+// Minimal Node createExecuteTool factory — sandboxes LLM code with a
+// `codemode` binding holding pre-materialised crafted-tool executes.
+// Mirrors @proteus/cli-backend/createNodeExecuteToolFactory at the level
+// this test needs.
+const createNodeExecFactory = () =>
+  (opts: {
+    tools: Record<string, { description: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+  }) => {
+    const codemode: Record<string, (arg: unknown) => Promise<unknown>> = {};
+    for (const [name, e] of Object.entries(opts.tools)) {
+      codemode[name] = e.execute as (arg: unknown) => Promise<unknown>;
+    }
+    return tool({
+      description: 'test exec_tools',
+      inputSchema: jsonSchema<{ code: string }>({
+        type: 'object', properties: { code: { type: 'string' } }, required: ['code'],
+      }),
+      execute: async (a: { code: string }) => {
+        try {
+          const fn = new Function('codemode', 'return (async () => { ' + a.code + ' })()');
+          const result = await fn(codemode);
+          return { result };
+        } catch (e) {
+          return { result: undefined, error: (e as Error).message };
+        }
+      },
+    });
+  };
 
 describe('Phase B — Node crafted-tool executor', () => {
   test('codemode.<name>(arg) round-trips a stored tool with Node executor', async () => {
@@ -56,11 +86,11 @@ describe('Phase B — Node crafted-tool executor', () => {
       rt,
       engine,
       craftedToolExecute: createNodeCraftedExecute(),
+      // Phase E: core no longer ships a fallback. The caller supplies the
+      // Node execute-tools factory just like cli-backend does in production.
+      createExecuteTool: createNodeExecFactory() as never,
     });
 
-    // execute_tools fallback path (no codemode loader in test runtime)
-    // exposes crafted tools under the `codemode` global so the LLM-style
-    // call matches production prompt contract.
     const execTool = tools.execute_tools as {
       execute: (a: { code: string }) => Promise<{ result: unknown; error?: string }>;
     };
