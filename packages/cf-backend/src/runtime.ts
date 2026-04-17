@@ -44,10 +44,20 @@ export type CFRuntime = AgentRuntime & {
   sshExecutor: ReturnType<typeof createSSHTunnelExecutor>;
 };
 
+/** Optional hooks the orchestrator can inject into the CF runtime. */
+export interface CFRuntimeHooks {
+  /**
+   * Fires synchronously from workspace.createTool after a successful
+   * create/update. The orchestrator wires this to CraftedToolRegistry
+   * so same-turn codemode.<name>(args) dispatch is possible.
+   */
+  onToolRegistered?: (tool: { name: string; description: string; code: string }) => void;
+}
+
 /**
  * Build a full AgentRuntime from a Think agent's DO context.
  */
-export function createCFRuntime(agent: Think<Env>): CFRuntime {
+export function createCFRuntime(agent: Think<Env>, hooks: CFRuntimeHooks = {}): CFRuntime {
   const sql = agent.sql.bind(agent) as unknown as SqlExecutor;
   const execRaw: RawSqlExec = (ddl: string) => agent.ctx.storage.sql.exec(ddl);
 
@@ -89,6 +99,10 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
     // sql is used by workspace.listTools() to look up EMA craft_scores.
     // Cast because adaptVFS returns core's SqlExecutor shape.
     sql: sql as unknown as import("@proteus/core").SqlExecutor,
+    // v2.1-liveness: fires on every workspace.createTool. Orchestrator wires
+    // this to CraftedToolRegistry.addOrRefresh so mid-turn codemode.<name>
+    // dispatch works.
+    onToolRegistered: hooks.onToolRegistered,
   }));
   // Register Nimbus executor if the NimbusSession DO binding is available
   const env = agent.env as Env & Record<string, unknown>;

@@ -85,6 +85,15 @@ export interface BuiltinToolDeps {
    *   hatch for test runtimes / in-memory fixtures that don't wire an adapter.
    */
   craftedToolExecute?: CraftedToolExecute;
+  /**
+   * When supplied, used as-is for `execute_tools`. Both `codemodeLoader`
+   * and `createExecuteTool` are ignored. The CF adapter uses this to
+   * install a pre-constructed codemode tool wired to a `LiveCraftedExecutor`
+   * so mid-turn `workspace.createTool` mutations are visible to subsequent
+   * `codemode.<name>(args)` calls in the same turn. Core doesn't care how
+   * the tool is constructed — it only needs the final ToolSet entry.
+   */
+  preBuiltExecuteTool?: unknown;
 }
 
 /**
@@ -183,7 +192,9 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
       )
     : {};
 
-  if (deps.createExecuteTool) {
+  if (deps.preBuiltExecuteTool) {
+    tools.execute_tools = deps.preBuiltExecuteTool as ToolSet[string];
+  } else if (deps.createExecuteTool) {
     try {
       const providers = router?.getProviders() ?? [];
       tools.execute_tools = deps.createExecuteTool({

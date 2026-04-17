@@ -19,7 +19,10 @@
 
 import { callable } from "agents";
 import { Think, Session } from "@cloudflare/think";
-import { createExecuteTool } from "@cloudflare/think/tools/execute";
+// v2.1-liveness: we no longer use @cloudflare/think's createExecuteTool
+// wrapper — we construct the codemode tool directly via createCodeTool +
+// a custom LiveCraftedExecutor so mid-turn crafted-tool additions are
+// visible to the next execute_tools call in the same turn.
 import { createWorkersAI } from "workers-ai-provider";
 import type { LanguageModel, ToolSet } from "ai";
 import type {
@@ -41,10 +44,10 @@ import {
   migrateCraftedToolDuplicates,
   type CompletedTurn, type ToolCallRecord, type AgentRuntime,
   type SessionWriter, type SessionMessage,
-  type CraftedToolExecute,
 } from "@proteus/core";
+import { createCodeTool } from "@cloudflare/codemode/ai";
 import { createCFRuntime, type CFRuntime } from "./runtime.js";
-import { createCFCraftedExecute } from "./craft-executor.js";
+import { CraftedToolRegistry, LiveCraftedExecutor } from "./crafted-tool-registry.js";
 
 const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
 const SESSION_REFLECTION_INTERVAL = 5; // turns between session reflections
@@ -71,10 +74,16 @@ export class OrchestratorAgent extends Think<Env> {
   private _cachedTools: ToolSet | null = null;
   private _cachedToolsKey: string = "";
 
-  // v2.1(C): crafted-tool executor — spawns a per-tool child Worker via
-  // env.LOADER.get(). Persisted on the instance so its internal stub cache
-  // survives getTools() rebuilds. One instance per DO lifetime.
-  private _craftedExecute: CraftedToolExecute | null = null;
+  // v2.1-liveness: live registry of crafted tools. Mutable — workspace.createTool
+  // pushes into `fns` mid-turn. The LiveCraftedExecutor wrapping the codemode
+  // tool below reads this on every execute_tools call, so same-turn additions
+  // are visible. Persisted on the instance so the per-tool LOADER Worker
+  // cache survives getTools() rebuilds.
+  private _craftRegistry: CraftedToolRegistry | null = null;
+  // Pre-built execute_tools (from codemode/ai.createCodeTool) wired to the
+  // registry via LiveCraftedExecutor. Constructed once per DO lifetime; its
+  // live fns dict is re-populated from the registry at every call.
+  private _craftExecTool: unknown = null;
 
   // ── Activity logging: persisted + broadcast to Logs pane ──
   private _turnT0 = 0;
@@ -91,7 +100,17 @@ export class OrchestratorAgent extends Think<Env> {
   }
 
   private get rt(): AgentRuntime {
-    if (!this._rt) this._rt = createCFRuntime(this);
+    if (!this._rt) {
+      this._rt = createCFRuntime(this, {
+        onToolRegistered: (tool) => {
+          try {
+            this.getCraftRegistry().addOrRefresh(tool);
+          } catch (err) {
+            console.warn('[proteus] onToolRegistered hook failed:', (err as Error).message);
+          }
+        },
+      });
+    }
     return this._rt;
   }
 
@@ -108,21 +127,97 @@ export class OrchestratorAgent extends Think<Env> {
   }
 
   /**
-   * v2.1(C): lazy crafted-tool executor. Bound once per DO lifetime so the
-   * per-tool LOADER stub cache survives getTools() rebuilds.
+   * v2.1-liveness: lazy crafted-tool registry. Bound once per DO lifetime
+   * so its Worker-stub cache and `fns` identity survive getTools() rebuilds.
+   * Same-turn mutation entry point for `workspace.createTool`.
    */
-  private getCraftedExecute(): CraftedToolExecute {
-    if (!this._craftedExecute) {
+  private getCraftRegistry(): CraftedToolRegistry {
+    if (!this._craftRegistry) {
       const env = this.env as Env & Record<string, unknown>;
       if (!env.LOADER) {
         throw new Error("CF runtime missing LOADER binding — check wrangler.jsonc worker_loaders");
       }
-      this._craftedExecute = createCFCraftedExecute(
-        env.LOADER as unknown as Parameters<typeof createCFCraftedExecute>[0],
+      this._craftRegistry = new CraftedToolRegistry(
+        env.LOADER as unknown as ConstructorParameters<typeof CraftedToolRegistry>[0],
         this.ctx.id.toString(),
       );
     }
-    return this._craftedExecute;
+    return this._craftRegistry;
+  }
+
+  /**
+   * Build (or return cached) the execute_tools AI tool for this DO. The tool
+   * wraps codemode.createCodeTool + LiveCraftedExecutor — the crucial piece
+   * that re-reads the live registry at every call so mid-turn additions work.
+   *
+   * The list of crafted tools codemode sees at construction is the registry's
+   * snapshot AT THAT MOMENT. For initial type-generation that's fine; the
+   * types for crafted tools added mid-turn don't appear in the LLM's
+   * description, BUT the codemode sandbox Proxy dispatches ANY property
+   * access to `__dispatchers.codemode.call(name, args)` — so the LLM can
+   * still write `codemode.newTool(args)` and it works if the name exists in
+   * the live dispatcher fns.
+   */
+  private getExecuteToolsTool(): unknown {
+    if (!this._craftExecTool) {
+      const env = this.env as Env & Record<string, unknown>;
+      if (!env.LOADER) throw new Error("CF runtime missing LOADER binding");
+      const registry = this.getCraftRegistry();
+      // Custom live executor: bypasses DynamicWorkerExecutor's sanitize step
+      // on dispatcher keys so reserved-word tool names (e.g. "double") work.
+      const liveExecutor = new LiveCraftedExecutor(
+        env.LOADER as unknown as ConstructorParameters<typeof LiveCraftedExecutor>[0],
+        registry,
+      );
+      // Seed the registry once from the CraftStore so initial construction
+      // has the pre-existing tools. Mid-turn adds go through the registry
+      // directly; getTools() rebuild will re-sync via _syncRegistryFromStore.
+      this._syncRegistryFromStore(registry);
+
+      // Pass the full ToolProvider[] to codemode:
+      //   - codemode (crafted tools) — object-args, live registry snapshot
+      //   - workspace (filesystem, shell, createTool, etc.) — positional args
+      //   - nimbus/sandbox/laptop — positional args, only if registered
+      // createCodeTool uses this to generate the LLM-visible types string.
+      // At execute time, LiveCraftedExecutor rebuilds the codemode provider's
+      // fns from the registry's current state (captures mid-turn additions).
+      const executionRouter = this.rt.executionRouter;
+      const executorProviders = executionRouter?.getProviders() ?? [];
+      const craftedProvider = {
+        name: "codemode",
+        tools: registry.toolSet() as Record<string, { description: string; execute: (arg: unknown) => Promise<unknown> }>,
+      };
+      const allProviders = [craftedProvider, ...executorProviders.map(p => ({
+        name: p.name,
+        tools: p.tools as Record<string, { description?: string; execute: (...args: unknown[]) => Promise<unknown> }>,
+        types: p.types,
+        positionalArgs: p.positionalArgs,
+      }))];
+
+      this._craftExecTool = createCodeTool({
+        tools: allProviders as Parameters<typeof createCodeTool>[0]["tools"],
+        executor: liveExecutor,
+      });
+    }
+    return this._craftExecTool;
+  }
+
+  /**
+   * Refresh registry contents from the CraftStore. Called at every
+   * getTools() rebuild so persisted crafted tools (created in prior turns
+   * or seeded by evolution) are present in the live `fns` dict.
+   */
+  private _syncRegistryFromStore(registry: CraftedToolRegistry): void {
+    try {
+      const rows = this.rt.craftStore.list();
+      registry.bulkLoad(rows.map(r => ({
+        name: r.name,
+        description: r.description ?? '',
+        code: r.code ?? '',
+      })));
+    } catch (err) {
+      console.warn('[proteus] _syncRegistryFromStore failed:', (err as Error).message);
+    }
   }
 
   // ── Model resolution ───────────────────────────────────────────
@@ -230,29 +325,21 @@ export class OrchestratorAgent extends Think<Env> {
     this.logActivity("gettools_rebuilding", `${this._cachedToolsKey} → ${cacheKey}`);
 
     try {
-      const env = this.env as Env & Record<string, unknown>;
       const orchestrator = this;
 
-      // All 5 tools come from @proteus/core. CF-specific concerns are injected:
-      //   - codemodeLoader + createExecuteTool factory (real Worker sandbox)
-      //   - wrapExplore (durable runFiber with broadcast checkpoints)
-      //   - onMctsProgress (WebSocket push to React UI)
-      //   - createMctsSession (DO-backed writer for MCTS nodes)
-      //   - onExplorePhase (threads phase checkpoints into the active fiber's
-      //     ctx.stash so an interrupted explore can resume from its last known
-      //     phase — preserves the pre-refactor starting/running/completed stash
-      //     sequence).
+      // v2.1-liveness: keep the registry in sync with the persistent CraftStore
+      // at every getTools() rebuild. The LiveCraftedExecutor wrapping the
+      // pre-built execute_tools reads the registry on each execute, so
+      // mid-turn mutations via workspace.createTool propagate immediately.
+      const registry = this.getCraftRegistry();
+      this._syncRegistryFromStore(registry);
+
       type FiberCtx = { stash(data: unknown): void };
       const activeFiberCtx: { current: FiberCtx | null } = { current: null };
       const tools = buildBuiltinTools({
         rt: this.rt,
         engine: this.engine,
-        codemodeLoader: env.LOADER,
-        createExecuteTool: createExecuteTool as unknown as Parameters<typeof buildBuiltinTools>[0]["createExecuteTool"],
-        // v2.1(C): crafted tools execute in per-tool child Workers via LOADER.
-        // Replaces the broken host-side `new Function()` path — the production
-        // failure mode was V8 "Code generation from strings disallowed".
-        craftedToolExecute: this.getCraftedExecute(),
+        preBuiltExecuteTool: this.getExecuteToolsTool(),
         onMctsProgress: (phase, iteration, budget) => this.broadcastMctsProgress(phase, iteration, budget),
         createMctsSession: () => this.createMCTSSession(),
         onExplorePhase: (phase, task) => {
