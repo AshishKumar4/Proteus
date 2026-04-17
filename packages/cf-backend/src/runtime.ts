@@ -33,6 +33,7 @@ import type { SqlExecutor } from "@proteus/agent-utils";
 import { generateText } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { DynamicWorkerExecutor } from "@cloudflare/codemode";
 import type { Think } from "@cloudflare/think";
 import { ExplorationAgent } from "./exploration.js";
 
@@ -71,7 +72,11 @@ export function createCFRuntime(agent: Think<Env>): CFRuntime {
   // Adapt CraftStore to core's CraftStore interface
   const craftStore = adaptCraftStore(craftStoreImpl);
 
-  const executor = createExecutor();
+  const envForExec = agent.env as Env & Record<string, unknown>;
+  if (!envForExec.LOADER) {
+    throw new Error("CF runtime requires env.LOADER binding (worker_loaders in wrangler.jsonc)");
+  }
+  const executor = createExecutor(envForExec.LOADER);
   const llm = createDualPathLLM(agent);
   const schedule = createRealSchedule(agent);
   const identity = createIdentity(agent, vfs, sql as unknown as CoreSqlExecutor);
@@ -202,15 +207,22 @@ function adaptCraftedTool(t: { name: string; description: string; params: Record
   };
 }
 
-// ── Executor: new Function() fallback (codemode upgrade in orchestrator) ──
+// ── Executor: LOADER-backed DynamicWorkerExecutor ──
+//
+// v2.1(E): delegates to @cloudflare/codemode's DynamicWorkerExecutor which
+// spawns a child Worker per execute() call via env.LOADER.get(). Replaces
+// the broken new-Function() fallback that fired "Code generation from
+// strings disallowed" in production. Consumer: scaffold/modify.ts parse gate
+// is the only caller today; any future caller gets the same real-Worker
+// isolation semantics.
 
-function createExecutor(): Executor {
+function createExecutor(loader: unknown): Executor {
+  const dwe = new DynamicWorkerExecutor({ loader: loader as ConstructorParameters<typeof DynamicWorkerExecutor>[0]["loader"] });
   return {
-    async execute(code: string, _providers: ResolvedProvider[]): Promise<ExecuteResult> {
+    async execute(code: string, providers: ResolvedProvider[]): Promise<ExecuteResult> {
       try {
-        const fn = new Function(`return (async () => { ${code} })()`);
-        const result = await fn();
-        return { result: result === undefined ? "(no return value)" : result };
+        const res = await dwe.execute(code, providers);
+        return res as ExecuteResult;
       } catch (e) {
         return { result: undefined, error: e instanceof Error ? e.message : String(e) };
       }

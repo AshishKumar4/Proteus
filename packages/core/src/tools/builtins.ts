@@ -22,7 +22,6 @@ import type { AgentRuntime } from '../types/agent-runtime.js';
 import type { EvolutionEngine } from '../evolution/engine.js';
 import type { SessionWriter } from '../mcts/record-node.js';
 import { BUILTIN_TOOL_DESCRIPTIONS } from './registry.js';
-import { loadFilteredCraftedTools } from './crafted.js';
 import type { CraftedToolExecute } from './crafted-executor.js';
 import { effectiveScore } from '../craft/ema.js';
 import { DEFAULT_CONFIG } from '../config.js';
@@ -80,28 +79,21 @@ export interface BuiltinToolDeps {
    * - CF adapter supplies a LOADER-backed implementation that spawns a child
    *   Worker per tool via `env.LOADER.get(toolName, factory)`. Modules are
    *   compiled by workerd, sidestepping V8's codegen ban.
-   * - CLI adapter supplies a `new Function(code)()` implementation. Node/Bun
-   *   allows codegen, so this is fast and safe there.
+   * - CLI adapter supplies a Node-eval implementation (Node/Bun permits
+   *   codegen).
    * - Absent: crafted tools are skipped silently (warn). Kept as an escape
    *   hatch for test runtimes / in-memory fixtures that don't wire an adapter.
-   *
-   * When present, this REPLACES the legacy `loadFilteredCraftedTools({invocation:
-   * 'inline-function'})` host-side `new Function` path. When absent, the legacy
-   * path is retained (Phases B/C fill in the adapters; Phase E removes the
-   * legacy path entirely).
    */
   craftedToolExecute?: CraftedToolExecute;
 }
 
 /**
  * Build the crafted-tool map using a platform-correct executor factory.
- * Drops the host-side `new Function` path entirely — each tool's execute is
- * produced by `craftedToolExecute(tool)` which dispatches appropriately for
- * the runtime (LOADER Worker on CF, `new Function` on Node).
+ * All codegen lives behind `craftedToolExecute(tool)` — core has no
+ * in-process code-generation path of its own.
  *
- * Filter semantics match `loadFilteredCraftedTools`: effective-score >=
- * minScore, comment-only code dropped, every observed name recorded into
- * `preexistingNames`.
+ * Filter semantics: effective-score >= minScore, comment-only code dropped,
+ * every observed name recorded into `preexistingNames`.
  */
 function buildCraftedToolSetFromExecute(
   rt: AgentRuntime,
@@ -177,9 +169,10 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
   const tools: ToolSet = {};
 
   // ── 1. execute_tools ─────────────────────────────────────────────────────
-  // We track pre-existing tool names (regardless of whether they passed the
-  // filter) so the live-lookup Proxy below can respect score-based filtering
-  // while still allowing same-turn createTool() → codemode.<name> invocation.
+  // v2.1(E): single code path. Crafted tools always dispatch through
+  // deps.craftedToolExecute (CF → LOADER Worker, CLI → Node eval).
+  // Host-side codegen is GONE — the Proxy live-lookup that used it is
+  // deleted, and the legacy in-process compile path is no longer here.
   const preexistingCraftNames = new Set<string>();
   const craftedToolSet = deps.craftedToolExecute
     ? buildCraftedToolSetFromExecute(
@@ -188,13 +181,9 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
         deps.minEffectiveScore ?? DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection,
         preexistingCraftNames,
       )
-    : loadFilteredCraftedTools(rt, {
-        invocation: 'inline-function',
-        minScore: deps.minEffectiveScore ?? DEFAULT_CONFIG.craftStore.minEffectiveScoreForInjection,
-        recordPreexisting: preexistingCraftNames,
-      });
+    : {};
 
-  if (deps.codemodeLoader && deps.createExecuteTool) {
+  if (deps.createExecuteTool) {
     try {
       const providers = router?.getProviders() ?? [];
       tools.execute_tools = deps.createExecuteTool({
@@ -207,97 +196,28 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolSet {
     }
   }
 
-  // Fallback when no codemode loader or createExecuteTool factory:
-  // new-Function + workspaceApi. Semantics match the CF fallback at
-  // orchestrator.ts:258-301 exactly, minus the loader path.
+  // v2.1(E): no core-level fallback. Callers MUST supply createExecuteTool
+  // (CF passes @cloudflare/think's real one; CLI passes a Node adapter
+  // from @proteus/cli-backend/execute-tools-factory). If neither is wired,
+  // execute_tools returns a sharp error — a silent in-process compile
+  // would break in any V8 isolate.
   if (!tools.execute_tools) {
     tools.execute_tools = tool({
       description:
         BUILTIN_TOOL_DESCRIPTIONS.execute_tools +
-        ' (fallback mode — workspace.* APIs only, no codemode sandbox)',
+        ' (NOT CONFIGURED — missing createExecuteTool factory on this runtime)',
       inputSchema: jsonSchema<{ code: string }>({
         type: 'object',
         properties: { code: { type: 'string', description: 'JavaScript code to execute' } },
         required: ['code'],
       }),
-      execute: async (args: { code: string }) => {
-        try {
-          const workspaceApi = {
-            readFile: async (path: string) => {
-              const content = await vfs.readFile(path, { encoding: 'utf8' });
-              return content ?? `File not found: ${path}`;
-            },
-            writeFile: async (path: string, content: string) => {
-              await vfs.writeFile(path, content);
-              return `Written ${content.length} bytes to ${path}`;
-            },
-            exec: async (command: string) => {
-              if (!shell) return 'Error: no shell available in this runtime.';
-              const result = await shell.exec(command);
-              if (result.exitCode !== 0) return `Error (exit ${result.exitCode}): ${result.stderr}`;
-              return result.stdout || '(no output)';
-            },
-            readdir: async (path: string) => vfs.readdir(path),
-            exists: async (path: string) => vfs.exists(path),
-            searchMemory: async (query: string) => {
-              const results = await memory.search(query, 10);
-              return results.map((r) => `[${r.path}] ${r.snippet}`).join('\n') || 'No results.';
-            },
-            saveNote: async (content: string) => {
-              const ts = new Date().toISOString().split('T')[0];
-              await memory.append('memory/MEMORY.md', `\n### Note (${ts})\n${content}\n`);
-              await memory.index('memory/MEMORY.md');
-              return 'Note saved.';
-            },
-          };
-          // Expose crafted tools under the `codemode` global to mirror the real
-          // codemode sandbox (see @cloudflare/codemode/dist/ai.js:163-178, which
-          // unwraps .execute via extractFns before exposing).
-          //
-          // We use a Proxy so the lookup happens at call-time, picking up tools
-          // created via workspace.createTool() earlier in the SAME execute_tools
-          // call. Without this, a newly created tool is not callable until the
-          // next turn (when getTools() rebuilds the cache).
-          const codemode = new Proxy({} as Record<string, (...args: unknown[]) => Promise<unknown>>, {
-            get(_target, prop: string) {
-              // Prefer the upfront-loaded map (applies score filtering).
-              const upfront = craftedToolSet[prop];
-              if (upfront) return upfront.execute;
-              // If the tool WAS present at getTools() time but was filtered out
-              // by the score threshold, it stays inaccessible — don't resurrect
-              // low-quality tools via the live-lookup path.
-              if (preexistingCraftNames.has(prop)) return undefined;
-              // Only for tools NEW since getTools() ran (i.e. created in this
-              // execute_tools call via workspace.createTool), fall back to live
-              // CraftStore lookup so same-turn create-then-use works.
-              const live = rt.craftStore.get(prop);
-              if (!live || !live.code || live.code.startsWith('//')) return undefined;
-              try {
-                const fn = new Function('return ' + live.code)() as (...args: unknown[]) => Promise<unknown>;
-                if (typeof fn !== 'function') return undefined;
-                return (...args: unknown[]) => fn(...args);
-              } catch {
-                return undefined;
-              }
-            },
-            has(_target, prop: string) {
-              if (prop in craftedToolSet) return true;
-              if (preexistingCraftNames.has(prop)) return false;
-              const live = rt.craftStore.get(prop);
-              return !!live;
-            },
-          });
-          const fn = new Function(
-            'workspace',
-            'codemode',
-            `return (async () => {\n${args.code}\n})()`,
-          );
-          const result = await fn(workspaceApi, codemode);
-          return { result: result === undefined ? '(no return value)' : result };
-        } catch (e) {
-          return { result: undefined, error: (e as Error).message };
-        }
-      },
+      execute: async () => ({
+        result: undefined,
+        error:
+          'execute_tools is not configured on this runtime. The backend must supply ' +
+          'deps.createExecuteTool to buildBuiltinTools (CF: @cloudflare/think; CLI: ' +
+          '@proteus/cli-backend/createNodeExecuteToolFactory).',
+      }),
     });
   }
 

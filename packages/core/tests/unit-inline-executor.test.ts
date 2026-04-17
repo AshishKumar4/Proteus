@@ -147,42 +147,7 @@ describe('workspace provider (InlineExecutor)', () => {
     expect(noCode.ok).toBe(false);
   });
 
-  test('invokeCrafted runs a tool by name — same-turn usable', async () => {
-    const { rt } = createTestRuntime();
-    const exec = buildExec(rt);
-
-    // Create a tool via createTool (as LLM would)
-    await exec.tools.createTool.execute(
-      'double',
-      'Doubles a number',
-      'async (n) => n * 2',
-    );
-
-    // Invoke it immediately via invokeCrafted (no turn boundary needed)
-    const result = await exec.tools.invokeCrafted.execute('double', 7);
-    expect(result).toBe(14);
-  });
-
-  test('invokeCrafted returns error object for missing tool', async () => {
-    const { rt } = createTestRuntime();
-    const exec = buildExec(rt);
-
-    const result = await exec.tools.invokeCrafted.execute('nonexistent') as { error: string };
-    expect(result).toBeDefined();
-    expect(result.error).toContain('not found');
-  });
-
-  test('invokeCrafted returns error for broken code', async () => {
-    const { rt } = createTestRuntime();
-    rt.craftStore.create({
-      name: 'brokey', description: 'busted', params: null,
-      code: 'this is not valid JS',
-      scope: 'local',
-    });
-    const exec = buildExec(rt);
-
-    const result = await exec.tools.invokeCrafted.execute('brokey') as { error: string };
-    expect(result).toBeDefined();
-    expect(typeof result.error).toBe('string');
-  });
+  // v2.1(E): invokeCrafted removed. Same-turn codemode.<name>() access is
+  // unsupported by design — the LLM must use two turns (createTool, then
+  // codemode.<name>). Tests for createTool alone remain above.
 });

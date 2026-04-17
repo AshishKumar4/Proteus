@@ -121,30 +121,8 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
       },
     },
 
-    invokeCrafted: {
-      description: 'Invoke a crafted tool BY NAME with positional args. Use this to call a tool just created via workspace.createTool() in the SAME turn, since codemode.<name> is only wired up at the start of a turn (getTools() cache). Returns the tool\'s return value, or an error object { error } on failure.',
-      execute: async (name: unknown, ...args: unknown[]) => {
-        const toolName = String(name);
-        if (!toolName) return { error: 'invokeCrafted requires a name argument.' };
-        const tool = craftStore.get(toolName);
-        if (!tool) return { error: `Crafted tool "${toolName}" not found in CraftStore.` };
-        if (!tool.code || tool.code.startsWith('//')) {
-          return { error: `Crafted tool "${toolName}" has no executable code.` };
-        }
-        try {
-          // Compile the crafted code to a function and invoke with positional args.
-          // Same semantics as loadFilteredCraftedTools('inline-function').
-          const fn = new Function('return ' + tool.code)() as (...args: unknown[]) => Promise<unknown>;
-          if (typeof fn !== 'function') return { error: `Crafted tool "${toolName}" code did not evaluate to a function.` };
-          return await fn(...args);
-        } catch (err) {
-          return { error: err instanceof Error ? err.message : String(err) };
-        }
-      },
-    },
-
     createTool: {
-      description: 'Create or update a reusable tool in CraftStore. To call the tool in the SAME turn, use workspace.invokeCrafted(name, ...args). The tool also becomes callable as codemode.<name>(args) in the NEXT turn (getTools() is cached per-turn). Returns { ok, name, action: "created"|"updated" }.',
+      description: 'Create or update a reusable tool in CraftStore. The tool becomes callable as codemode.<name>(args) in the NEXT turn (getTools() builds once per turn, wiring every crafted tool into the sandbox). Returns { ok, name, action: "created"|"updated" }.',
       execute: async (name: unknown, description: unknown, code: unknown) => {
         if (!name || !description || !code) {
           return { ok: false, error: 'createTool requires name, description, and code arguments.' };
@@ -190,20 +168,14 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
   /** Returns Array<{name, description, qualityScore}> of crafted tools. */
   function listTools(): Promise<Array<{ name: string; description: string; qualityScore: number }>>;
   /**
-   * Create or update a crafted tool. To CALL the tool in the SAME turn, use
-   * workspace.invokeCrafted(name, ...args). It also becomes callable as
-   * \`codemode.<name>(args)\` in the NEXT turn (getTools() caches per-turn).
-   * Name is sanitized to a valid JS identifier; original case preserved.
+   * Create or update a crafted tool. Becomes callable as
+   * \`codemode.<name>(args)\` in the NEXT turn (getTools() builds once per
+   * turn). Name is sanitized to a valid JS identifier; original case
+   * preserved.
    */
   function createTool(
     name: string, description: string, code: string
   ): Promise<{ ok: boolean; name?: string; action?: 'created' | 'updated'; error?: string }>;
-  /**
-   * Invoke a crafted tool by name with positional args. Use this when you
-   * just created a tool in the same turn and want to call it before codemode.<name>
-   * is wired up.
-   */
-  function invokeCrafted(name: string, ...args: unknown[]): Promise<unknown>;
 }`;
 
   return {
