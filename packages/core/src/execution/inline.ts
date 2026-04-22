@@ -29,11 +29,11 @@ export interface InlineExecutorDeps {
   sql?: SqlExecutor;
   /**
    * Optional mid-turn notification — fires synchronously from workspace.createTool
-   * after a successful create/update. The CF adapter uses this to register the
-   * tool into the LIVE CraftedToolRegistry so the very next execute_tools call
-   * in the SAME turn can invoke it as `codemode.<name>(args)`. Without this
-   * hook, codemode's frozen provider.fns shuts the door until the next turn's
-   * getTools() rebuild.
+   * after a successful create/update. Legacy hook retained for forward
+   * compatibility; the Seal-preamble executor (PreambleCraftedExecutor) does
+   * not need it because it reads craftStore.list() fresh on every execute.
+   * Kept in the interface so future adapters that want eager notification
+   * don't have to reshape InlineExecutorDeps.
    */
   onToolRegistered?: (tool: { name: string; description: string; code: string }) => void;
 }
@@ -131,7 +131,12 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
     },
 
     createTool: {
-      description: 'Create or update a reusable tool in CraftStore. The tool is immediately callable as codemode.<name>(args) in the SAME turn — you do NOT need to wait for the next turn. Returns { ok, name, action: "created"|"updated" }.',
+      description:
+        'Create or update a reusable tool in CraftStore. ' +
+        'Code must be an async arrow: `async (args) => { ... }`. ' +
+        'Inside the body you may call `workspace.*`, `codemode.*`, and other crafted tools as `tools.<name>(args)`. ' +
+        'Callable as `codemode.<name>(args)` or `tools.<name>(args)` on the NEXT execute_tools call in the same turn. ' +
+        'Returns { ok, name, action: "created"|"updated" }.',
       execute: async (name: unknown, description: unknown, code: unknown) => {
         if (!name || !description || !code) {
           return { ok: false, error: 'createTool requires name, description, and code arguments.' };
@@ -172,9 +177,9 @@ export function createInlineExecutor(deps: InlineExecutorDeps): ExecutorProvider
             scope: 'local',
             params: null,
           });
-          // v2.1-liveness: mid-turn live-dispatch hook. CF adapter wires this
-          // to CraftedToolRegistry.addOrRefresh so codemode.<name>(args) works
-          // on the NEXT execute_tools call in the SAME turn.
+          // Legacy hook; PreambleCraftedExecutor no longer needs it (reads
+          // craftStore.list() live). Kept as a no-op in CF; other adapters
+          // may still opt in.
           onToolRegistered?.({ name: toolName, description: desc, code: codeStr });
           return { ok: true, name: toolName, action: 'created' };
         } catch (err) {

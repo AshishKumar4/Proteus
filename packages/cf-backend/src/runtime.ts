@@ -48,8 +48,9 @@ export type CFRuntime = AgentRuntime & {
 export interface CFRuntimeHooks {
   /**
    * Fires synchronously from workspace.createTool after a successful
-   * create/update. The orchestrator wires this to CraftedToolRegistry
-   * so same-turn codemode.<name>(args) dispatch is possible.
+   * create/update. Legacy hook: the Seal-preamble executor doesn't need it
+   * (reads craftStore.list() live). Retained for adapters that want eager
+   * notification.
    */
   onToolRegistered?: (tool: { name: string; description: string; code: string }) => void;
 }
@@ -99,9 +100,7 @@ export function createCFRuntime(agent: Think<Env>, hooks: CFRuntimeHooks = {}): 
     // sql is used by workspace.listTools() to look up EMA craft_scores.
     // Cast because adaptVFS returns core's SqlExecutor shape.
     sql: sql as unknown as import("@proteus/core").SqlExecutor,
-    // v2.1-liveness: fires on every workspace.createTool. Orchestrator wires
-    // this to CraftedToolRegistry.addOrRefresh so mid-turn codemode.<name>
-    // dispatch works.
+    // Legacy hook — Seal-preamble path ignores it (live-reads craftStore).
     onToolRegistered: hooks.onToolRegistered,
   }));
   // Register Nimbus executor if the NimbusSession DO binding is available

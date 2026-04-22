@@ -88,10 +88,11 @@ export interface BuiltinToolDeps {
   /**
    * When supplied, used as-is for `execute_tools`. Both `codemodeLoader`
    * and `createExecuteTool` are ignored. The CF adapter uses this to
-   * install a pre-constructed codemode tool wired to a `LiveCraftedExecutor`
-   * so mid-turn `workspace.createTool` mutations are visible to subsequent
-   * `codemode.<name>(args)` calls in the same turn. Core doesn't care how
-   * the tool is constructed — it only needs the final ToolSet entry.
+   * install a pre-constructed codemode tool wired to a `PreambleCraftedExecutor`
+   * that splices a `const tools = {...}` preamble (Seal pattern) so crafted
+   * tools are visible to subsequent `codemode.<name>(args)` calls in the
+   * same turn. Core doesn't care how the tool is constructed — it only
+   * needs the final ToolSet entry.
    */
   preBuiltExecuteTool?: unknown;
 }

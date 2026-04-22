@@ -86,10 +86,14 @@ describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
     }
   });
 
-  test('descriptions use the codemode.* vocabulary, not tools.*', () => {
-    // This is the F1 regression gate — the prompt and the real namespace agree.
+  test('descriptions document both codemode.* and tools.<name> namespaces', () => {
+    // Post-Seal-preamble: both namespaces are real.
+    //   codemode.* dispatches over RPC into host-side provider fns.
+    //   tools.<name> resolves locally inside the preamble-injected object
+    //     literal (crafted tools, via PreambleCraftedExecutor).
+    // Either can invoke a crafted tool; the prompt must advertise both.
     expect(BUILTIN_TOOL_DESCRIPTIONS.execute_tools).toContain('codemode.*');
-    expect(BUILTIN_TOOL_DESCRIPTIONS.execute_tools).not.toContain('tools.*');
+    expect(BUILTIN_TOOL_DESCRIPTIONS.execute_tools).toContain('tools.');
   });
 
   test('save_note appends to MEMORY.md', async () => {
