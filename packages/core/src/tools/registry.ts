@@ -33,12 +33,22 @@ export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set(BUILTIN_TOOLS);
 
 /**
  * Canonical descriptions. These are what the LLM sees as tool docstrings and
- * what the UI shows in the Tools tab. The `execute_tools` text is the contract
- * fix for F1: crafted tools live under `codemode.*`, not `tools.*`.
+ * what the UI shows in the Tools tab.
+ *
+ * Namespace contract (Seal-preamble pattern — see docs/CRAFT-ARCHITECTURE-COMPARISON.md):
+ *   - `workspace.*` — filesystem / shell / memory primitives.
+ *   - `codemode.*` — every provider exposed via createCodeTool, including
+ *     crafted tools once they have been type-declared at construction time.
+ *   - `tools.<name>` — crafted tools are ALSO reachable as local object
+ *     properties inside the execute_tools async arrow, injected by the
+ *     preamble. Crafted-tool bodies may call `workspace.*`, `codemode.*`,
+ *     and `tools.<other>` interchangeably.
  */
 export const BUILTIN_TOOL_DESCRIPTIONS: Record<BuiltinToolName, string> = {
   execute_tools:
-    'Write JS to accomplish tasks. workspace.* for files/shell, codemode.* for learned patterns. Runs in sandboxed Worker.',
+    'Write JS to accomplish tasks. workspace.* for files/shell, codemode.* for learned patterns. ' +
+    'Agent-crafted tools are also reachable as tools.<name>(args) inside the sandbox; their bodies ' +
+    'may call workspace.*, codemode.*, and tools.* freely. Runs in sandboxed Worker.',
   run: 'Run a POSIX shell command (cat, grep, find, sed, ls, etc.). Pipes and redirects work. Optional executor param routes to nimbus/sandbox/laptop.',
   explore:
     'MCTS tree search for complex subproblems. Spawns parallel branches, evaluates outcomes, returns the best approach discovered.',
