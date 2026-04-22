@@ -35,7 +35,7 @@ export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set(BUILTIN_TOOLS);
  * Canonical descriptions. These are what the LLM sees as tool docstrings and
  * what the UI shows in the Tools tab.
  *
- * Namespace contract (Seal-preamble pattern — see docs/CRAFT-ARCHITECTURE-COMPARISON.md):
+ * Namespace contract (preamble-injection pattern — see docs/CRAFT-ARCHITECTURE.md):
  *   - `workspace.*` — filesystem / shell / memory primitives.
  *   - `codemode.*` — every provider exposed via createCodeTool, including
  *     crafted tools once they have been type-declared at construction time.

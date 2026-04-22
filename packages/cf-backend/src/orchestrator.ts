@@ -19,12 +19,12 @@
 
 import { callable } from "agents";
 import { Think, Session } from "@cloudflare/think";
-// v2.1-liveness / Seal-preamble pattern: we construct the codemode tool
+// v2.1-liveness — preamble-injection pattern: we construct the codemode tool
 // directly via createCodeTool + PreambleCraftedExecutor. The executor reads
 // craftStore.list() on every call and splices a `const tools = {...}`
 // preamble into the LLM's sandbox arrow, so mid-turn additions are visible
 // on the next execute_tools call and tool bodies share lexical scope with
-// workspace.*/codemode.* (see docs/CRAFT-ARCHITECTURE-COMPARISON.md).
+// workspace.*/codemode.* (see docs/CRAFT-ARCHITECTURE.md).
 import { createWorkersAI } from "workers-ai-provider";
 import type { LanguageModel, ToolSet } from "ai";
 import type {
@@ -76,8 +76,8 @@ export class OrchestratorAgent extends Think<Env> {
   private _cachedTools: ToolSet | null = null;
   private _cachedToolsKey: string = "";
 
-  // Seal-preamble: the codemode tool is built once per DO lifetime. Its
-  // executor (PreambleCraftedExecutor) reads craftStore.list() on every
+  // Preamble-injection: the codemode tool is built once per DO lifetime.
+  // Its executor (PreambleCraftedExecutor) reads craftStore.list() on every
   // execute call, so newly-saved tools appear on the next execute_tools
   // invocation without any registry or cache coherence work.
   private _craftExecTool: unknown = null;
@@ -100,8 +100,7 @@ export class OrchestratorAgent extends Think<Env> {
     if (!this._rt) {
       // No onToolRegistered hook: PreambleCraftedExecutor reads craftStore.list()
       // fresh on every execute_tools call, so mid-turn saves propagate
-      // without any registry plumbing. Matches Seal's pattern at
-      // /workspace/seal/packages/agent-utils/src/codemode/builder.ts:136.
+      // without any registry plumbing (see docs/CRAFT-ARCHITECTURE.md §3).
       this._rt = createCFRuntime(this);
     }
     return this._rt;
@@ -132,7 +131,7 @@ export class OrchestratorAgent extends Think<Env> {
    *     preamble per execute, reading craftStore.list() fresh — so tools
    *     saved mid-turn are callable on the next execute_tools step and
    *     crafted-tool bodies inherit lexical scope with `workspace.*` and
-   *     `codemode.*` (Phase A + C of CRAFT-ARCHITECTURE-COMPARISON.md).
+   *     `codemode.*` (Phase A + C of CRAFT-ARCHITECTURE.md).
    *
    * Newly-named crafted tools (saved after this tool is constructed) are
    * NOT reflected in the LLM-visible description string, but codemode's
@@ -293,7 +292,7 @@ export class OrchestratorAgent extends Think<Env> {
       const orchestrator = this;
 
       // No registry sync: PreambleCraftedExecutor reads craftStore.list()
-      // fresh at every execute. See docs/CRAFT-ARCHITECTURE-COMPARISON.md §5.6.
+      // fresh at every execute. See docs/CRAFT-ARCHITECTURE.md §5.6.
 
       type FiberCtx = { stash(data: unknown): void };
       const activeFiberCtx: { current: FiberCtx | null } = { current: null };

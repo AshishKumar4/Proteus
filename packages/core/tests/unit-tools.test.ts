@@ -87,7 +87,7 @@ describe('Agent tools (v2.0 canonical 5-tool surface)', () => {
   });
 
   test('descriptions document both codemode.* and tools.<name> namespaces', () => {
-    // Post-Seal-preamble: both namespaces are real.
+    // Preamble-pattern invariant: both namespaces are real.
     //   codemode.* dispatches over RPC into host-side provider fns.
     //   tools.<name> resolves locally inside the preamble-injected object
     //     literal (crafted tools, via PreambleCraftedExecutor).

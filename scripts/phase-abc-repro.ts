@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Phase A+B+C empirical test — Seal preamble pattern.
+ * Phase A+B+C empirical test — preamble-injection pattern.
  *
  * User scenario: "Create a tool called readAndSummarize that reads a file
  * and returns its first 50 chars. Write /tmp/test.txt with 'Hello World'.

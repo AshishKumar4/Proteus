@@ -1,12 +1,11 @@
 /**
- * Crafted-tool execution — Seal-style preamble injection.
+ * Crafted-tool execution — preamble-injection pattern.
  *
- * Phase A+B+C of the upgrade plan in docs/CRAFT-ARCHITECTURE-COMPARISON.md.
+ * Phase A+B+C of the upgrade plan in docs/CRAFT-ARCHITECTURE.md.
  * Replaces the hand-rolled `LiveCraftedExecutor` that reimplemented
  * `@cloudflare/codemode`'s DynamicWorkerExecutor sandbox module from scratch.
  *
- * Architecture (borrowed from
- * /workspace/seal/packages/agent-utils/src/codemode/builder.ts:114-146):
+ * Architecture:
  *
  *   1. `DynamicWorkerExecutor({ loader })` — upstream codemode, unmodified.
  *   2. Before every `execute(code, providers)`, read `craftStore.list()`
@@ -40,8 +39,8 @@ interface ResolvedProvider {
 
 /**
  * Build the `const tools = { name: <body>, ... };` preamble.
- * Follows Seal builder.ts:114-121 verbatim. Empty → empty string (preamble
- * is only spliced if non-empty, see `injectPreamble`).
+ * Empty → empty string (preamble is only spliced if non-empty, see
+ * `injectPreamble`).
  */
 export function buildToolsPreamble(tools: ReadonlyArray<{ name: string; code: string }>): string {
   if (tools.length === 0) return '';
@@ -50,10 +49,10 @@ export function buildToolsPreamble(tools: ReadonlyArray<{ name: string; code: st
 }
 
 /**
- * Splice the preamble into the LLM's async arrow. Seal builder.ts:140-144.
+ * Splice the preamble into the LLM's async arrow.
  * Regex matches the head of `async (...) => { ... }` (whitespace-tolerant).
  * If the LLM's code doesn't match that shape, the preamble is dropped
- * silently — same failure mode as Seal.
+ * silently.
  */
 export function injectPreamble(code: string, preamble: string): string {
   if (!preamble) return code;
@@ -90,8 +89,8 @@ function structuredError(
  * (Phase B). Dispatcher serialization preserves the object across the
  * sandbox RPC boundary; the LLM sees `{error: true, message, stack, toolName}`.
  *
- * Note: Seal does NOT do this — Seal passes bare `err.message`. This is a
- * Proteus-specific improvement for agent observability.
+ * Proteus-specific — the reference prior-art implementation passes bare
+ * `err.message`; we send the structured envelope for agent observability.
  */
 function wrapProvidersWithStructuredErrors(providers: ResolvedProvider[]): ResolvedProvider[] {
   return providers.map(p => {
@@ -113,7 +112,7 @@ function wrapProvidersWithStructuredErrors(providers: ResolvedProvider[]): Resol
 }
 
 /**
- * PreambleCraftedExecutor — the Seal-shaped wrapper around DWE.
+ * PreambleCraftedExecutor — preamble-injecting wrapper around DWE.
  *
  * Lifecycle:
  *   - Constructed once per DO lifetime (inner DWE caches LOADER stubs).
@@ -148,7 +147,7 @@ export class PreambleCraftedExecutor {
       : [{ name: 'codemode', fns: providers }];
 
     // Read fresh from the CraftStore every execute — mid-turn-saved tools
-    // appear on the very next `execute_tools` call (Seal's pattern).
+    // appear on the very next `execute_tools` call (the preamble pattern).
     const craftedRows = (() => {
       try {
         return this.#craftStore.list().map(r => ({

@@ -48,7 +48,7 @@ export type CFRuntime = AgentRuntime & {
 export interface CFRuntimeHooks {
   /**
    * Fires synchronously from workspace.createTool after a successful
-   * create/update. Legacy hook: the Seal-preamble executor doesn't need it
+   * create/update. Legacy hook: PreambleCraftedExecutor doesn't need it
    * (reads craftStore.list() live). Retained for adapters that want eager
    * notification.
    */
@@ -100,7 +100,7 @@ export function createCFRuntime(agent: Think<Env>, hooks: CFRuntimeHooks = {}): 
     // sql is used by workspace.listTools() to look up EMA craft_scores.
     // Cast because adaptVFS returns core's SqlExecutor shape.
     sql: sql as unknown as import("@proteus/core").SqlExecutor,
-    // Legacy hook — Seal-preamble path ignores it (live-reads craftStore).
+    // Legacy hook — PreambleCraftedExecutor ignores it (live-reads craftStore).
     onToolRegistered: hooks.onToolRegistered,
   }));
   // Register Nimbus executor if the NimbusSession DO binding is available

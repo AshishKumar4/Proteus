@@ -30,10 +30,10 @@ export interface InlineExecutorDeps {
   /**
    * Optional mid-turn notification — fires synchronously from workspace.createTool
    * after a successful create/update. Legacy hook retained for forward
-   * compatibility; the Seal-preamble executor (PreambleCraftedExecutor) does
-   * not need it because it reads craftStore.list() fresh on every execute.
-   * Kept in the interface so future adapters that want eager notification
-   * don't have to reshape InlineExecutorDeps.
+   * compatibility; the PreambleCraftedExecutor does not need it because it
+   * reads craftStore.list() fresh on every execute. Kept in the interface
+   * so future adapters that want eager notification don't have to reshape
+   * InlineExecutorDeps.
    */
   onToolRegistered?: (tool: { name: string; description: string; code: string }) => void;
 }
