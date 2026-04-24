@@ -1,0 +1,49 @@
+=== Express E2E ===
+agent=express-e2e-mocigh26
+base=https://proteus.ashishkumarsingh.com
+start=2026-04-24T06:09:41.982Z
+
+
+--- Opening agent: express-e2e-mocigh26
+
+--- Opening agent WS to https://proteus.ashishkumarsingh.com
+  connected
+
+--- Step 1/4: write /workspace/server.js
+  write result: {"stdout":"(no output)","stderr":"","exitCode":0}
+
+--- Step 2/4: npm init + install express
+  npm result: {"stdout":"\n22 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities","stderr":"","exitCode":0}
+
+--- Step 3/4: start node server.js in background
+  start result: {"stdout":"listening on 8080","stderr":"","exitCode":0}
+
+--- Step 4/4: curl localhost:8080 from inside container
+  smoke: {"stdout":"Hello World from Proteus Sandbox","stderr":"","exitCode":0}
+
+--- Exposing port 8080
+  exposePort: {"url":"https://8080-proteus-express-e2e-mocigh26-duwffjonv_y_k7vu.proteus.ashishkumarsingh.com/"}
+
+--- Polling getExposedPorts
+  @15s — ports=[]
+  @30s — ports=[]
+  @45s — ports=[]
+  @60s — ports=[]
+  @76s — ports=[]
+  @91s — ports=[]
+  @106s — ports=[]
+  @121s — ports=[]
+  @136s — ports=[]
+  @151s — ports=[]
+  @166s — ports=[]
+  @181s — ports=[]
+  @196s — ports=[]
+  @212s — ports=[]
+  @227s — ports=[]
+  @242s — ports=[]
+  @257s — ports=[]
+  @272s — ports=[]
+  @287s — ports=[]
+  @302s — ports=[]
+
+FAIL: no exposed URL
