@@ -62,7 +62,7 @@ Legend: ✅ shipped · ⚠️ partial · ❌ missing · 🔜 deferred
 
 ## 19. Agent can build and preview apps end-to-end
 **Status:** ✅ Shipped.
-**Evidence (2026-04-24 13:04 E2E on live deployment \`8870b589\`):**
+**Evidence (2026-04-24 13:04 E2E on live deployment \`71eeb959\`):**
 - Write \`/workspace/server.js\` ✅
 - \`npm install express\` ✅
 - \`node server.js\` bound port 8080 ✅
