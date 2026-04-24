@@ -17,20 +17,19 @@
   "durable_objects": {
     "bindings": [
       { "class_name": "OrchestratorAgent", "name": "OrchestratorAgent" },
-      { "class_name": "ExplorationAgent", "name": "ExplorationAgent" }
-      // Optional executor bindings — add to enable the matching UI tab.
-      // Without them, the executor shows in the "Not configured" footer.
+      { "class_name": "ExplorationAgent", "name": "ExplorationAgent" },
+      // Nimbus (DO-based dev env: shell + node + npm + git). Deployed as a
+      // sibling "nimbus" Worker; Proteus binds it via cross-Worker service
+      // binding. See docs/EXECUTOR-V2.md §1 and scripts/deploy.sh.
+      { "class_name": "NimbusSession", "name": "NIMBUS_SESSION", "script_name": "nimbus" }
       //
-      // Nimbus (DO-based dev env: shell + node + npm + git via github.com/AshishKumar4/Nimbus)
-      //   { "class_name": "NimbusSession", "name": "NIMBUS_SESSION", "script_name": "nimbus" }
-      //
-      // Container (full Linux VM via @cloudflare/sandbox — requires a "containers"
+      // Container (full Linux VM via CF Container DO — requires a "containers"
       // top-level block with a Dockerfile; see CF Containers docs)
-      //   { "class_name": "Sandbox", "name": "CONTAINER" }
+      //   { "class_name": "SandboxContainer", "name": "CONTAINER" }
       //
       // SSH/laptop (user's local machine via WebSocket tunnel):
-      //   No binding needed — users run `proteus-daemon` locally. The executor
-      //   becomes available when a tunnel WebSocket attaches at runtime.
+      //   No binding needed — users run a local daemon. The executor becomes
+      //   available when a tunnel WebSocket attaches at runtime.
     ]
   },
   "migrations": [
