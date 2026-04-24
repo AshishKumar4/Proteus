@@ -48,7 +48,7 @@ import {
   forkAgentStorage, readForkLineage,
   nanoid,
   type CompletedTurn, type ToolCallRecord, type AgentRuntime,
-  type SessionWriter, type SessionMessage,
+  type SessionWriter, type SessionMessage, type SqlExecutor,
 } from "@proteus/core";
 import { createCodeTool } from "@cloudflare/codemode/ai";
 import { createCFRuntime, type CFRuntime } from "./runtime.js";
@@ -180,6 +180,23 @@ export class OrchestratorAgent extends Think<Env> {
   // Set in beforeTurn, cleared in onChatResponse (after durable persist;
   // evolution is fire-and-forget and does not extend the busy window).
   private _inFlight = false;
+
+  // ── Bound SQL executor ────────────────────────────────────────────────
+  // `this.sql` is a plain method on the Agent base class — it needs `this`
+  // bound to reach `this.ctx.storage.sql`. Passing `this.sql` as a bare
+  // function reference to any helper (readForkLineage, forkAgentStorage)
+  // loses the binding and fails with `Cannot read properties of undefined
+  // (reading 'ctx')`. This closure captures `this` once and can be safely
+  // passed by reference.
+  private _boundSql: SqlExecutor | null = null;
+  private get boundSql(): SqlExecutor {
+    if (!this._boundSql) {
+      this._boundSql = ((strings: TemplateStringsArray, ...values: unknown[]) =>
+        (this.sql as unknown as (s: TemplateStringsArray, ...v: unknown[]) => unknown[])(strings, ...values)
+      ) as SqlExecutor;
+    }
+    return this._boundSql;
+  }
 
   private logActivity(event: string, detail?: string) {
     const elapsed = this._turnT0 > 0 ? Math.round(performance.now() - this._turnT0) : 0;
@@ -720,9 +737,18 @@ export class OrchestratorAgent extends Think<Env> {
         SELECT COALESCE(MAX(version), 0) as v FROM scaffold_versions`;
       const searchNodes = this.sql<{ c: number }>`SELECT COUNT(*) as c FROM search_nodes`;
       const craftedTools = this.sql<{ c: number }>`SELECT COUNT(*) as c FROM crafted_tools`;
-      const messageCount = this.messages.length;
+      // Message count reflects the persisted `messages` table, which is the
+      // authoritative turn history used for fork cut-points. For non-fork
+      // agents this table is populated by onChatResponse's mirror; for forks
+      // it's populated by forkAgentStorage's copy. Falling back to the
+      // in-memory AIChatAgent array keeps behavior sane before the first
+      // turn has been mirrored.
+      const tableCount = this.sql<{ c: number }>`
+        SELECT COUNT(*) as c FROM messages WHERE session_id = 'default'
+      `;
+      const messageCount = tableCount[0]?.c ?? this.messages.length;
       // Fork lineage — null for non-forked agents.
-      const forkLineage = readForkLineage(this.sql);
+      const forkLineage = readForkLineage(this.boundSql);
       return {
         id: identity[0]?.id ?? this.ctx.id.toString(),
         name: identity[0]?.name ?? this.name,
@@ -1086,16 +1112,10 @@ export class OrchestratorAgent extends Think<Env> {
     // have cross-DO SQL queries — the payload IS the materialized source view.
     const srcSql = buildSqlFromPayload(payload);
 
-    // Bind this.sql to `this` so forkAgentStorage can call it as a free-standing
-    // tagged-template executor. Think/Agent's sql prop relies on its internal
-    // ctx; a bare function reference loses that binding.
-    const boundSql = ((strings: TemplateStringsArray, ...values: unknown[]) =>
-      (this.sql as unknown as (s: TemplateStringsArray, ...v: unknown[]) => unknown[])(strings, ...values)
-    ) as never;
-
-    // Copy atomically.
+    // Copy atomically. `this.boundSql` is a stable closure over `this.sql`
+    // that preserves the `this`-binding the Agent base class needs.
     this.ctx.storage.transactionSync(() => {
-      forkAgentStorage(srcSql, boundSql, {
+      forkAgentStorage(srcSql, this.boundSql, {
         untilMessageId: payload.lineage.forkOriginMessageId,
         targetAgentId: this.ctx.id.toString(),
         targetAgentName: payload.forkName,
@@ -1109,7 +1129,7 @@ export class OrchestratorAgent extends Think<Env> {
   /** Expose the single-row fork_lineage for the UI lineage chip. */
   @callable()
   async getForkLineage() {
-    return readForkLineage(this.sql);
+    return readForkLineage(this.boundSql);
   }
 
   /**
