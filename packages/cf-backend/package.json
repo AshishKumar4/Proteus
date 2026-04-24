@@ -13,6 +13,7 @@
     "@cloudflare/ai-chat": "^0.4.2",
     "@cloudflare/codemode": "^0.3.4",
     "@cloudflare/kumo": "^1.18.0",
+    "@cloudflare/sandbox": "^0.8.11",
     "@cloudflare/think": "^0.2.4",
     "@phosphor-icons/react": "^2.1.10",
     "@proteus/agent-utils": "workspace:*",

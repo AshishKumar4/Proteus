@@ -21,10 +21,11 @@ import type {
   FiberCtx, ExecutionRouter,
 } from "@proteus/core";
 import {
-  DefaultExecutionRouter, createInlineExecutor, createNimbusExecutor,
-  createContainerExecutor, createSSHTunnelExecutor,
+  DefaultExecutionRouter, createInlineExecutor,
+  createSandboxExecutor, createSSHTunnelExecutor,
 } from "@proteus/core";
-import type { NimbusStub, ContainerStub } from "@proteus/core";
+import type { SandboxHandle } from "@proteus/core";
+import { getSandbox } from "@cloudflare/sandbox";
 import { SqliteFS } from "@proteus/agent-utils/vfs";
 import { MemoryStore } from "@proteus/agent-utils/memory";
 import { CraftStore as AgentUtilsCraftStore } from "@proteus/agent-utils/stores";
@@ -103,37 +104,24 @@ export function createCFRuntime(agent: Think<Env>, hooks: CFRuntimeHooks = {}): 
     // Legacy hook — PreambleCraftedExecutor ignores it (live-reads craftStore).
     onToolRegistered: hooks.onToolRegistered,
   }));
-  // Register Nimbus executor if the NimbusSession DO binding is available
+  // Register Sandbox executor — Proteus's primary remote exec surface.
+  // Backed by @cloudflare/sandbox: one Linux container per agent, keyed
+  // by the agent's stable name.
   const env = agent.env as Env & Record<string, unknown>;
-  if (env.NIMBUS_SESSION) {
+  if (env.SANDBOX) {
     try {
-      const nimbusNs = env.NIMBUS_SESSION as { idFromName(name: string): { toString(): string }; get(id: unknown): NimbusStub };
-      const nimbusId = nimbusNs.idFromName(agent.name);
-      const nimbusStub = nimbusNs.get(nimbusId);
-      executionRouter.register(createNimbusExecutor(nimbusStub));
+      const handle = getSandbox(
+        env.SANDBOX as Parameters<typeof getSandbox>[0],
+        `proteus-${agent.name}`,
+      ) as unknown as SandboxHandle;
+      executionRouter.register(createSandboxExecutor(handle));
+      console.log("[proteus] SandboxExecutor registered");
     } catch (err) {
-      console.warn("[proteus] Failed to register NimbusExecutor:", (err as Error).message);
-    }
-  }
-
-  // Register Container executor if the CONTAINER DO binding is available.
-  // The binding is a DurableObjectNamespace — we derive a per-agent container ID.
-  if (env.CONTAINER) {
-    try {
-      const containerNs = env.CONTAINER as {
-        idFromName(name: string): { toString(): string };
-        get(id: unknown): ContainerStub;
-      };
-      const containerId = containerNs.idFromName(agent.name);
-      const containerStub = containerNs.get(containerId);
-      executionRouter.register(createContainerExecutor(containerStub));
-      console.log("[proteus] ContainerExecutor registered");
-    } catch (err) {
-      console.warn("[proteus] Failed to register ContainerExecutor:", (err as Error).message);
+      console.warn("[proteus] Failed to register SandboxExecutor:", (err as Error).message);
+      executionRouter.register(createSandboxExecutor());
     }
   } else {
-    // Register stub so it shows in the Executors tab with a "not configured" status
-    executionRouter.register(createContainerExecutor());
+    executionRouter.register(createSandboxExecutor());
   }
 
   // Register SSH tunnel executor — always available as a target, but only

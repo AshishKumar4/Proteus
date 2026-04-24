@@ -91,9 +91,11 @@ export { migrateCraftedToolDuplicates, type MigrationReport } from './craft/migr
 export {
   DefaultExecutionRouter,
   createInlineExecutor,
+  createSandboxExecutor, type SandboxHandle,
+  createSSHTunnelExecutor,
+  // Legacy (shelved) — kept for type imports only.
   createNimbusExecutor, type NimbusStub,
   createContainerExecutor, type ContainerStub,
-  createSSHTunnelExecutor,
   type ExecutorCapability, type ExecutorKind, type ExecutorProvider,
   type ExecutorInfo, type ExecutionRouter, type InlineExecutorDeps,
 } from './execution/index.js';
