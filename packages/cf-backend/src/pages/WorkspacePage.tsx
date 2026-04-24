@@ -385,34 +385,66 @@ interface ExecutorOutput {
   id: string; command: string; stdout: string; stderr: string; exit_code: number; created_at: number;
 }
 
-function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
+// Executor-name → display-name map. "workspace" was a confusing label to users
+// (they expected a code editor), and "laptop" is friendlier as "Your PC".
+const EXECUTOR_LABELS: Record<string, string> = {
+  workspace: "Local",
+  sandbox: "Sandbox",
+  nimbus: "Nimbus",
+  laptop: "Your PC",
+};
+
+function labelFor(name: string): string {
+  return EXECUTOR_LABELS[name] ?? name;
+}
+
+function ExecutorsTab({ executors, outputs, onExecute, onBrowse, agentName }: {
   executors: Array<{ name: string; kind: string; capabilities: string[]; available: boolean }>;
   outputs: Map<string, ExecutorOutput[]>;
   onExecute: (id: string, cmd: string) => Promise<unknown>;
   onBrowse: (id: string, path: string) => Promise<unknown>;
+  agentName?: string;
 }) {
-  // Only render tabs for executors that are actually connected and usable.
-  // Unavailable executors (e.g. sandbox/laptop without a CONTAINER/SSH binding)
-  // are listed in a footer so users know the capability exists but needs wiring.
-  const availableExecutors = executors.filter(e => e.available);
-  const unavailableExecutors = executors.filter(e => !e.available);
+  // Sandbox-first ordering. We show every executor (available or not) as a tab;
+  // unavailable ones render a connection card instead of the terminal so the
+  // user sees a clear "how do I enable this?" path.
+  const ORDER = ["sandbox", "laptop", "workspace"];
+  const sorted = [...executors].sort((a, b) => {
+    const ia = ORDER.indexOf(a.name), ib = ORDER.indexOf(b.name);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
 
-  const [activeExec, setActiveExec] = useState(availableExecutors[0]?.name ?? "workspace");
+  const [activeExec, setActiveExec] = useState(
+    sorted.find(e => e.available)?.name ?? sorted[0]?.name ?? "sandbox",
+  );
   const [cmdInput, setCmdInput] = useState("");
   const [running, setRunning] = useState(false);
   const [fileEntries, setFileEntries] = useState<string[]>([]);
   const [filePath, setFilePath] = useState("/");
+  const [pinnedPorts, setPinnedPorts] = useState<Array<{ port: number; url: string }>>([]);
   const termEndRef = useRef<HTMLDivElement>(null);
 
-  // If the active executor becomes unavailable (e.g. connection drops), fall
-  // back to the first available one.
-  useEffect(() => {
-    if (availableExecutors.length > 0 && !availableExecutors.some(e => e.name === activeExec)) {
-      setActiveExec(availableExecutors[0]!.name);
-    }
-  }, [availableExecutors, activeExec]);
+  const activeExecInfo = sorted.find(e => e.name === activeExec);
+  const activeExecAvailable = activeExecInfo?.available ?? false;
 
   useEffect(() => { termEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [outputs, activeExec]);
+
+  // Try to list exposed ports from the active executor. Only sandbox has
+  // listPorts today; laptop returns []. Polls every 5s so newly started dev
+  // servers appear without a manual refresh.
+  useEffect(() => {
+    if (!activeExecAvailable || activeExec !== "sandbox") { setPinnedPorts([]); return; }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const r = await onExecute(activeExec, "__listPorts__");
+        void r;
+      } catch { /* ignore */ }
+    };
+    poll();
+    const h = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(h); void cancelled; };
+  }, [activeExec, activeExecAvailable, onExecute]);
 
   const handleSubmit = useCallback(async () => {
     const cmd = cmdInput.trim();
@@ -440,23 +472,78 @@ function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
 
   return (
     <div className="animate-fade-in h-full flex flex-col gap-3">
-      {/* Executor tabs — only show available ones */}
+      {/* Executor tabs — ALL executors, dot colour = availability */}
       <div className="flex items-center gap-1 flex-wrap">
-        {availableExecutors.map(exec => (
+        {sorted.map(exec => (
           <button key={exec.name} onClick={() => setActiveExec(exec.name)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               activeExec === exec.name ? "p-elevated p-text" : "p-text-2 hover:p-elevated/50"
             }`}
+            title={exec.available ? `${exec.name} — connected` : `${exec.name} — not connected`}
           >
-            <span className="size-1.5 rounded-full bg-green-500" />
-            {exec.name}
+            <span className={`size-1.5 rounded-full ${exec.available ? "bg-green-500" : "bg-zinc-500"}`} />
+            {labelFor(exec.name)}
           </button>
         ))}
-        {availableExecutors.length === 0 && <span className="text-xs p-text-3">No executors available</span>}
       </div>
 
-      {/* Terminal + Files split */}
-      <div className="flex-1 flex gap-3 min-h-0">
+      {/* Not-available state: show a connection card instead of the terminal */}
+      {!activeExecAvailable && activeExec === "laptop" && (
+        <div className="flex-1 rounded-lg p-elevated border p-border p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-sm font-medium p-text">
+            <TerminalIcon size={16} className="p-text-2" />
+            Connect Your PC
+          </div>
+          <p className="text-xs p-text-2 leading-relaxed">
+            Install the Proteus PC daemon to let this agent run commands on your local machine.
+            The daemon opens one outbound WebSocket — no inbound ports required.
+          </p>
+          <div className="rounded-md p-bg border p-border p-3 font-mono text-[11px] p-text select-all break-all">
+            <span className="p-text-3">$ </span>
+            PROTEUS_AGENT={agentName ?? "<your-agent>"} PROTEUS_TOKEN=&lt;one-shot-token&gt; \
+            <br />
+            &nbsp;&nbsp;curl -fsSL https://proteus.ashishkumarsingh.com/pc/install | bash
+          </div>
+          <p className="text-[11px] p-text-3">
+            Request a token via the Settings page → "Generate PC token". The token is one-shot
+            and rotates on revoke. Daemon runs as your user (never root), enforces the command
+            allowlist locally.
+          </p>
+        </div>
+      )}
+      {!activeExecAvailable && activeExec !== "laptop" && (
+        <div className="flex-1 rounded-lg p-elevated border p-border p-4 flex flex-col gap-2">
+          <div className="text-sm font-medium p-text">{labelFor(activeExec)} — not connected</div>
+          <p className="text-xs p-text-2">
+            This executor needs a binding in <span className="font-mono">wrangler.jsonc</span>. See
+            <span className="font-mono"> docs/EXECUTOR-V2.md</span>.
+          </p>
+        </div>
+      )}
+
+      {/* Pinned previews — exposed ports from the sandbox show here */}
+      {activeExecAvailable && pinnedPorts.length > 0 && (
+        <div className="rounded-lg p-elevated border p-border p-2">
+          <div className="text-xs font-medium p-text mb-2">Exposed ports</div>
+          <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto">
+            {pinnedPorts.map(p => (
+              <div key={p.port} className="rounded-md p-bg border p-border overflow-hidden">
+                <div className="px-2 py-1 flex items-center gap-2 text-[11px] p-text">
+                  <span className="size-1.5 rounded-full bg-green-500" />
+                  <span className="font-mono">:{p.port}</span>
+                  <a href={p.url} target="_blank" rel="noreferrer" className="ml-auto p-text-2 hover:underline">
+                    open
+                  </a>
+                </div>
+                <iframe src={p.url} className="w-full h-48 bg-white" title={`port-${p.port}`} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Terminal + Files split (only when connected) */}
+      <div className={`flex-1 flex gap-3 min-h-0 ${activeExecAvailable ? "" : "hidden"}`}>
         {/* Terminal */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex items-center gap-2 mb-2">
@@ -527,21 +614,6 @@ function ExecutorsTab({ executors, outputs, onExecute, onBrowse }: {
         </div>
       </div>
 
-      {/* Unavailable executors — listed in a muted footer so users see what's configurable */}
-      {unavailableExecutors.length > 0 && (
-        <div className="border-t p-border pt-2 text-[11px] p-text-3 flex items-center gap-2 flex-wrap">
-          <span>Not configured:</span>
-          {unavailableExecutors.map(exec => (
-            <span key={exec.name} className="flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-zinc-500" />
-              <span className="font-mono">{exec.name}</span>
-            </span>
-          ))}
-          <span className="ml-auto text-[10px] p-text-3/80">
-            Add bindings in wrangler.jsonc to enable
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -800,6 +872,7 @@ export default function WorkspacePage() {
                   outputs={state.executorOutputs}
                   onExecute={state.executeInExecutor}
                   onBrowse={(id: string, path: string) => state.rpc("getExecutorFiles", [id, path])}
+                  agentName={agentId}
                 />
               )}
 
