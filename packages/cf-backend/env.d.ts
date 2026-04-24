@@ -11,6 +11,7 @@
 // transparently fall through to the gateway (AI_GATEWAY_URL + AI_GATEWAY_AUTH).
 import type { OrchestratorAgent } from "./src/orchestrator.js";
 import type { ExplorationAgent } from "./src/exploration.js";
+import type { ProteusSandbox } from "./src/proteus-sandbox.js";
 
 interface Env {
   /** Workers AI direct binding. OPTIONAL — fallback is the AI Gateway. */
@@ -18,6 +19,8 @@ interface Env {
   LOADER: WorkerLoader;
   OrchestratorAgent: DurableObjectNamespace<OrchestratorAgent>;
   ExplorationAgent: DurableObjectNamespace<ExplorationAgent>;
+  /** Sandbox container DO — @cloudflare/sandbox. One per agent. */
+  SANDBOX: DurableObjectNamespace<ProteusSandbox>;
   AI_GATEWAY_URL: string;
   AI_GATEWAY_AUTH: string;
 }
