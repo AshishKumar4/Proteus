@@ -1,6 +1,6 @@
 # Proteus — Requirements Audit
 
-Tracks every user request from this conversation with current status, commit SHAs, and evidence. Last updated 2026-04-24.
+Tracks every user request from this conversation with current status, commit SHAs, and evidence. Last updated 2026-04-24 (post-E2E green).
 
 Legend: ✅ shipped · ⚠️ partial · ❌ missing · 🔜 deferred
 
@@ -61,50 +61,23 @@ Legend: ✅ shipped · ⚠️ partial · ❌ missing · 🔜 deferred
 **Status:** ✅ Shipped after fixing 2 bugs surfaced by Puppeteer: assistant_messages table copy (`f349496`) and fork-marker UI mirror (`8c2ae7f`). 41/41 green checks.
 
 ## 19. Agent can build and preview apps end-to-end
-**Status:** ⚠️ Partial. Build flow works; preview URL wiring has 2 remaining gaps.
-- ✅ Write file, `npm install express`, `node server.js`, in-container curl all succeed
-- ✅ `exposePort(8080)` returns a URL  
-- ❌ `getExposedPorts()` returns `[]` (see G1 below)
-- ❌ `exposePort` URL still subdomain-shaped (see G2)
+**Status:** ✅ Shipped.
+**Evidence (2026-04-24 13:04 E2E on live deployment \`8870b589\`):**
+- Write \`/workspace/server.js\` ✅
+- \`npm install express\` ✅
+- \`node server.js\` bound port 8080 ✅
+- \`exposePort(8080)\` → \`https://proteus.ashishkumarsingh.com/_preview/8080/proteus-express-e2e-.../p8080_.../\` ✅
+- \`getExposedPorts()\` returned in 3s (was [] for 210s pre-fix) ✅
+- Fetching preview URL returned "Hello World from Proteus Sandbox" ✅
+- UI iframe rendered the URL ✅
+- Transcript: \`docs/screenshots/e2e-express-app/transcript.txt\`
 
-## 20. Zero Seal references in source/docs
-**Status:** ✅ Verified. `grep -rni 'seal' packages/ docs/` → 0.
+## G1 — \`getExposedPorts\` returns \`[]\` — CLOSED 2026-04-24
+**Fix in commit \`a6e254f\`:** \`packages/core/src/execution/sandbox.ts\` \`listPorts\` tool calls \`handle.getExposedPorts(hostname)\` and remaps SDK URLs into path-style. Orchestrator \`getExposedPorts\` RPC forwards the provider output.
 
----
+## G2 — \`exposePort\` URL rewrite — CLOSED 2026-04-24
+**Fix in commit \`a6e254f\`:** \`exposePort\` tool generates a stable token, calls SDK with it, and returns \`buildPathPreviewUrl(hostname, port, sandboxId, token)\`. \`preview-proxy.ts\` on incoming side validates + forwards.
 
-## Open gaps (staged for immediate next pass)
-
-### G1 — `getExposedPorts` returns `[]` despite successful `exposePort`
-**Severity:** High — blocks preview iframe auto-populate.
-**Root cause:** Orchestrator RPC reads from agent-DO-local `tools.listPorts`, not sandbox DO.
-**Fix plan:** `getExposedPorts` calls `getSandbox(env.SANDBOX, agentId).listPorts()` directly.
-
-### G2 — `exposePort` URL rewrite to `/_preview/…` not applied
-**Severity:** High — preview iframes won't load until rewritten.
-**Fix plan:** Override `exposePort` in `ProteusSandbox` to return `https://proteus.ashishkumarsingh.com/_preview/<port>/<sandboxId>/<token>/`. Proxy handler (`preview-proxy.ts`) already wired in `server.ts`.
-
-### G3 — Full "build + preview" Puppeteer E2E green
-**Severity:** Medium (evidence bar).
-**Fix plan:** After G1+G2, re-run `scripts/phase-express-e2e.ts`, expect all green + iframe HTTP 200 + screenshot.
-
----
-
-## Deployment trail (most recent first)
-- `a6e254f` feat(preview): path-based proxy /_preview/<port>/<sandbox>/<token>/* + E2E harness
-- `f0032b7` feat(exec): port auto-refresh + xterm terminal + PC install-command UI
-- `8c2ae7f` feat(F2): mirror fork-marker into assistant_messages
-- `f349496` fix(F2): copy Think's assistant_messages table on fork
-- `ae5720b` fix(F2): unify sql binding via boundSql
-- `bdae3d1` fix(F2): bind this.sql before passing to forkAgentStorage
-- Active deployment: `8870b589-74a8-447b-813a-ff80479c89f5` @ 2026-04-24T12:57:32Z
-
-## Tests
-- Core: 102 pass / 3 skip / 0 fail / 326 expect()
-- cf-backend: passing
-- 0 Seal references
-
-## Hosting
-- Live: https://proteus.ashishkumarsingh.com (200)
-- Account: `f44999d1ddda7012e9a87729eba250f1`
-- Wrangler OAuth active
+## G3 — Full build+preview E2E green — CLOSED 2026-04-24
+Full transcript + iframe screenshot in \`docs/screenshots/e2e-express-app/\`.
 

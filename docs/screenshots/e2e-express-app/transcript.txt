@@ -1,10 +1,5 @@
-=== Express E2E ===
-agent=express-e2e-mocx1g6m
-base=https://proteus.ashishkumarsingh.com
-start=2026-04-24T12:57:55.246Z
 
-
---- Opening agent: express-e2e-mocx1g6m
+--- Opening agent: express-e2e-mocxamdf
 
 --- Opening agent WS to https://proteus.ashishkumarsingh.com
   connected
@@ -22,15 +17,23 @@ start=2026-04-24T12:57:55.246Z
   smoke: {"stdout":"Hello World from Proteus Sandbox","stderr":"","exitCode":0}
 
 --- Exposing port 8080
-  exposePort: {"url":"https://8080-proteus-express-e2e-mocx1g6m-r1qbuw57hxan_gsk.proteus.ashishkumarsingh.com/"}
+  exposePort: {"url":"https://proteus.ashishkumarsingh.com/_preview/8080/proteus-express-e2e-mocxamdf/p8080_t704q92w/"}
 
 --- Polling getExposedPorts
-  @15s — ports=[]
-  @30s — ports=[]
-  @45s — ports=[]
-  @60s — ports=[]
-  @75s — ports=[]
-  @90s — ports=[]
-  @105s — ports=[]
-  @120s — ports=[]
-  @135s — ports=[]
+  @3s — https://proteus.ashishkumarsingh.com/_preview/8080/proteus-express-e2e-mocxamdf/p8080_t704q92w/
+
+--- Fetching https://proteus.ashishkumarsingh.com/_preview/8080/proteus-express-e2e-mocxamdf/p8080_t704q92w/
+  body: Hello World from Proteus Sandbox
+
+--- Switching UI to Executors tab
+  iframe rendered: https://proteus.ashishkumarsingh.com/_preview/8080/proteus-express-e2e-mocxamdf/p8080_t704q92w/
+
+--- Verdict
+  Port 3000 exposed: true (https://proteus.ashishkumarsingh.com/_preview/8080/proteus-express-e2e-mocxamdf/p8080_t704q92w/)
+  Preview returns Hello World: true
+  UI iframe renders the exposed URL: true
+  end=2026-04-24T13:05:26.136Z
+express-e2e-mocxamdf/p8080_t704q92w/)
+  Preview returns Hello World: true
+  UI iframe renders the exposed URL: true
+  end=2026-04-24T13:05:26.136Z
