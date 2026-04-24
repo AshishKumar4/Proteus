@@ -546,6 +546,31 @@ export class OrchestratorAgent extends Think<Env> {
       .map(p => (p as { type: "text"; text: string }).text)
       .join("") ?? "";
 
+    // Persist the completed turn into the `messages` table (session_id='default')
+    // so the fork feature has a durable row to cut against. AIChatAgent's
+    // in-memory this.messages is the chat UI's source of truth, but only
+    // session_id='default' rows are copied on fork. This mirror is cheap
+    // (two rows per turn) and idempotent (INSERT OR IGNORE on id).
+    try {
+      if (lastUserMsg?.id) {
+        const userCreatedAt = (() => {
+          const ts = (lastUserMsg as { createdAt?: string | number | Date }).createdAt;
+          if (typeof ts === "number") return ts;
+          if (typeof ts === "string") { const p = Date.parse(ts); if (!Number.isNaN(p)) return p; }
+          if (ts instanceof Date) return ts.getTime();
+          return this._turnStartedAt || Date.now();
+        })();
+        this.sql`INSERT OR IGNORE INTO messages (id, session_id, parent_id, role, content, created_at)
+                 VALUES (${lastUserMsg.id}, ${'default'}, ${null}, ${'user'}, ${userText}, ${userCreatedAt})`;
+      }
+      if (result.message.id) {
+        this.sql`INSERT OR IGNORE INTO messages (id, session_id, parent_id, role, content, created_at)
+                 VALUES (${result.message.id}, ${'default'}, ${lastUserMsg?.id ?? null}, ${'assistant'}, ${assistantText}, ${Date.now()})`;
+      }
+    } catch (err) {
+      console.warn("[proteus] mirror-to-messages failed:", err);
+    }
+
     const turn: CompletedTurn = {
       userMessage: userText,
       assistantResponse: assistantText,
