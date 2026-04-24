@@ -1086,9 +1086,16 @@ export class OrchestratorAgent extends Think<Env> {
     // have cross-DO SQL queries — the payload IS the materialized source view.
     const srcSql = buildSqlFromPayload(payload);
 
+    // Bind this.sql to `this` so forkAgentStorage can call it as a free-standing
+    // tagged-template executor. Think/Agent's sql prop relies on its internal
+    // ctx; a bare function reference loses that binding.
+    const boundSql = ((strings: TemplateStringsArray, ...values: unknown[]) =>
+      (this.sql as unknown as (s: TemplateStringsArray, ...v: unknown[]) => unknown[])(strings, ...values)
+    ) as never;
+
     // Copy atomically.
     this.ctx.storage.transactionSync(() => {
-      forkAgentStorage(srcSql, this.sql, {
+      forkAgentStorage(srcSql, boundSql, {
         untilMessageId: payload.lineage.forkOriginMessageId,
         targetAgentId: this.ctx.id.toString(),
         targetAgentName: payload.forkName,
