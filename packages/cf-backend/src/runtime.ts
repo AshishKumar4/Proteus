@@ -252,12 +252,12 @@ function createDualPathLLM(agent: Think<Env>): LLM {
       try {
         const env = agent.env as Env & Record<string, string>;
         const model = (env.AI && typeof env.AI !== "string")
-          ? createWorkersAI({ binding: env.AI })("@cf/moonshotai/kimi-k2.5")
+          ? createWorkersAI({ binding: env.AI })("@cf/moonshotai/kimi-k2.6")
           : createOpenAICompatible({
               name: "workers-ai",
               baseURL: env.AI_GATEWAY_URL ?? "",
               headers: { "Authorization": env.AI_GATEWAY_AUTH ?? "" },
-            }).chatModel("workers-ai/@cf/moonshotai/kimi-k2.5");
+            }).chatModel("workers-ai/@cf/moonshotai/kimi-k2.6");
         const result = await generateText({ model, prompt, maxOutputTokens: 512 });
         return result.text.trim();
       } catch { return "(reflection unavailable)"; }
@@ -336,12 +336,12 @@ function createInlineBranch(agent: Think<Env>): BranchHandle {
   const gatewayAuth = env.AI_GATEWAY_AUTH ?? "";
   // agent reference is NOT captured past this point
   const getModel = () => aiBinding
-    ? createWorkersAI({ binding: aiBinding })("@cf/moonshotai/kimi-k2.5")
+    ? createWorkersAI({ binding: aiBinding })("@cf/moonshotai/kimi-k2.6")
     : createOpenAICompatible({
         name: "workers-ai",
         baseURL: gatewayUrl,
         headers: { "Authorization": gatewayAuth },
-      }).chatModel("workers-ai/@cf/moonshotai/kimi-k2.5");
+      }).chatModel("workers-ai/@cf/moonshotai/kimi-k2.6");
 
   return {
     explore: async (history, _tools) => {

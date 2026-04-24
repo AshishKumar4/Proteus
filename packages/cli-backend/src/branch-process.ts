@@ -31,7 +31,7 @@ export function createBranchSpawner(basePath: string): { spawn: SpawnBranch; abo
         ...process.env,
         PROTEUS_BASE_URL: process.env.PROTEUS_BASE_URL ?? '',
         PROTEUS_AUTH: process.env.PROTEUS_AUTH ?? '',
-        PROTEUS_MODEL: process.env.PROTEUS_MODEL ?? '@cf/moonshotai/kimi-k2.5',
+        PROTEUS_MODEL: process.env.PROTEUS_MODEL ?? '@cf/moonshotai/kimi-k2.6',
         PROTEUS_PARENT_DB: `${basePath}.db`, // Parent DB path for loading crafted tools
       },
       // No execArgv needed — when running under bun, fork() inherits bun's runtime

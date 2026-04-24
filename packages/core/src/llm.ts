@@ -18,7 +18,7 @@ export interface LLMProviderConfig {
   baseURL: string;
   /** Auth headers (e.g., { 'Authorization': 'Bearer ...' }) */
   headers: Record<string, string>;
-  /** Model identifier (e.g., '@cf/moonshotai/kimi-k2.5') */
+  /** Model identifier (e.g., '@cf/moonshotai/kimi-k2.6') */
   model: string;
   /** Max tokens for completions (default: 2048) */
   maxTokens?: number;

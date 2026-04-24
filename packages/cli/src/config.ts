@@ -14,7 +14,7 @@ import type { LLMProviderConfig } from '@proteus/core';
 
 export const AGENT_HOME = join(homedir(), '.proteus');
 const CONFIG_PATH = join(AGENT_HOME, 'config.json');
-const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.5';
+const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.6';
 
 interface ProteusConfig {
   baseUrl?: string;

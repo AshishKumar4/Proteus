@@ -26,7 +26,7 @@ import type { MCTSNode } from "@/lib/protocol";
 const TABS = ["Identity", "Tools", "Memory", "MCTS Tree", "Evolution", "Executors", "Logs"] as const;
 type Tab = (typeof TABS)[number];
 const MODELS = [
-  { id: "@cf/moonshotai/kimi-k2.5", label: "Kimi K2.5" },
+  { id: "@cf/moonshotai/kimi-k2.6", label: "Kimi K2.6" },
   { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" },
   { id: "@cf/meta/llama-4-maverick-17b-128e-instruct", label: "Llama 4 Maverick" },
   { id: "@cf/qwen/qwen2.5-coder-32b-instruct", label: "Qwen 2.5 Coder" },

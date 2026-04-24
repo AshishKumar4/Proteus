@@ -51,11 +51,11 @@ import { createCodeTool } from "@cloudflare/codemode/ai";
 import { createCFRuntime, type CFRuntime } from "./runtime.js";
 import { PreambleCraftedExecutor } from "./crafted-tool-registry.js";
 
-const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
+const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
 const SESSION_REFLECTION_INTERVAL = 5; // turns between session reflections
 
 const AVAILABLE_MODELS = [
-  { id: "@cf/moonshotai/kimi-k2.5", name: "Kimi K2.5", description: "Advanced reasoning model with extended thinking" },
+  { id: "@cf/moonshotai/kimi-k2.6", name: "Kimi K2.6", description: "Advanced reasoning model with extended thinking" },
   { id: "@cf/meta/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout 17B", description: "General-purpose instruction model" },
 ] as const;
 

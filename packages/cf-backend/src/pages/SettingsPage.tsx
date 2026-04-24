@@ -40,7 +40,7 @@ const inputCls = "w-full rounded-lg px-3 py-2 text-sm p-text focus:outline-none 
 export default function SettingsPage() {
   const { agentId } = useParams();
   const state = useProteus(agentId);
-  const [modelName, setModelName] = useState("@cf/moonshotai/kimi-k2.5");
+  const [modelName, setModelName] = useState("@cf/moonshotai/kimi-k2.6");
   const [displayName, setDisplayName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [saving, setSaving] = useState(false);
@@ -53,7 +53,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (state.agentStatus) {
-      setModelName(state.agentStatus.model || "@cf/moonshotai/kimi-k2.5");
+      setModelName(state.agentStatus.model || "@cf/moonshotai/kimi-k2.6");
       setDisplayName(state.agentStatus.displayName || state.agentStatus.name || "");
       setPurpose(state.agentStatus.purpose || "");
     }
@@ -128,7 +128,7 @@ export default function SettingsPage() {
         <Card title="Model" icon={BrainIcon}>
           <Field label="Language Model">
             <select value={modelName} onChange={e => setModelName(e.target.value)} className={inputCls}>
-              <option value="@cf/moonshotai/kimi-k2.5">Kimi K2.5 (reasoning)</option>
+              <option value="@cf/moonshotai/kimi-k2.6">Kimi K2.6 (reasoning)</option>
               <option value="@cf/meta/llama-4-scout-17b-16e-instruct">Llama 4 Scout (fast)</option>
               <option value="@cf/meta/llama-4-maverick-17b-128e-instruct">Llama 4 Maverick</option>
               <option value="@cf/qwen/qwen2.5-coder-32b-instruct">Qwen 2.5 Coder 32B</option>
