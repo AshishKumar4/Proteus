@@ -17,7 +17,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { CraftedTool } from "@proteus/core";
 
-const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.5";
+const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
 
 export class ExplorationAgent extends Agent<Env> {
   private getModel(): LanguageModel {

@@ -7,7 +7,7 @@
  * Required env vars:
  *   AI_GATEWAY_BASE_URL  — Workers AI base URL
  *   AI_GATEWAY_AUTH      — Authorization header value (Bearer ...)
- *   AI_GATEWAY_MODEL     — Model ID (default: @cf/moonshotai/kimi-k2.5)
+ *   AI_GATEWAY_MODEL     — Model ID (default: @cf/moonshotai/kimi-k2.6)
  */
 
 import { createVercelAILLM } from '../../src/llm.js';
@@ -36,7 +36,7 @@ export function isE2EConfigured(): boolean {
 export function loadAIGatewayProviders(): { primary: LLM; judge: LLM } {
   const baseURL = getRequiredEnv('AI_GATEWAY_BASE_URL');
   const auth = getRequiredEnv('AI_GATEWAY_AUTH');
-  const model = process.env.AI_GATEWAY_MODEL ?? '@cf/moonshotai/kimi-k2.5';
+  const model = process.env.AI_GATEWAY_MODEL ?? '@cf/moonshotai/kimi-k2.6';
 
   const config = {
     name: 'workers-ai',
