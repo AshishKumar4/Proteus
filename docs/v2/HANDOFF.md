@@ -122,13 +122,23 @@ agent.runScaffoldOnce("hello", { useShadowOverride: true })  # fire pending shad
 agent.applyScaffoldDecision('auto')  # consult decidePromotion + act
 ```
 
-## What's NOT in v2 (queued for v2.x)
+## Completion pass — what landed in v2.x
 
-- **Scaffold takeover of `onChatMessage`** — scaffold execution is RPC-driven today. Replacing Think's `streamText()` with scaffold-driven inference for the user-facing turn requires deeper Think internals work + a robust feature gate. Deferred.
-- **Auto-judge shadow evaluation** — running BOTH current + pending per turn and recording per-turn judge scores would double LLM cost. Currently shadow evals are recorded by manual `runScaffoldOnce` calls; auto-judge needs sampling logic to keep cost bounded.
-- **UI panels for v2 RPCs** — React UI doesn't yet expose split_heads tree visualization, scaffold shadow status, or run-event browser. The RPCs exist; UI consumption is pending.
-- **Approval-channel UX** — `gate` decisions reject until the cf_agent_tool_approval message channel is wired through Think.
-- **Codebase-wide Valibot migration** — schemas use Zod throughout; switching to Valibot is ergonomic-only, low-priority.
+After the cleanup, four follow-up items were specifically requested for completion:
+
+- ✅ **Auto-judge shadow evaluation** — `runAutoShadowEval` runs the pending scaffold against each user turn (sampled, default 25%), asks a judge LLM to compare against the live response, records via `recordShadowEvaluation`. When `agent_config.auto_promote_scaffold='true'` and minTrials is reached, `applyPromotionDecision` fires automatically. Wired into `onChatResponse` as fire-and-forget after `EvolutionEngine.onTurnCompleteAsync`. Tunable via `agent_config.shadow_sample_rate` (0 disables).
+
+- ✅ **Scaffold-driven chat (explicit)** — `chatViaScaffold(task)` @callable explicitly runs the agent's scaffold with full host bridges (host.llmStream → Workers AI; host.callTool → orchestrator's full ToolSet; host.emit → WebSocket broadcast + durable event log). Streams text deltas as `{type:'scaffold-chat'}` messages so the V2 Panel can render them; persists the final message to `assistant_messages`. Honest caveat: Think's `_runInferenceLoop` is private, so the *default* chat-message handler still routes through Think's standard `streamText` — `chatViaScaffold` is the explicit "run via scaffold" entry point users / the UI / the CLI can invoke. True default-path takeover requires forking Think.
+
+- ✅ **Approval channel UX** — `agent_config.shell_approval_mode` controls how `gate` decisions (sudo / rm-recursive / git force-push / etc.) are handled: `strict` (reject, default), `allow_all` (execute as warn), `deny_all` (reject gate AND warn for max safety). `setShellApprovalMode(mode)` + `getShellApprovalMode()` RPCs. Plumbed into BuiltinToolDeps and read on `getTools()` cache rebuild.
+
+- ✅ **V2 Panel React page** — `/v2/<agentId>` exposes all v2 RPCs in one operator UI: scaffold rollout status + promote/rollback buttons; shell approval mode radio; auto-judge config (sample_rate + auto_promote toggle); Vectorize binding status; "Run via scaffold" textarea + button; live run history with click-to-stream events via EventSource. Sidebar entry between MCTS and Settings.
+
+## What's still genuinely deferred (Think-internals work)
+
+- **Default `onChatMessage` takeover** — Think's `_runInferenceLoop` is private; the path forward is either a Think fork or upstream PR. Today: users invoke `chatViaScaffold` explicitly or via the V2 Panel "Run via scaffold" button.
+- **Per-command approval flow via `cf_agent_tool_approval`** — Think's tool-approval message protocol could wire interactive approval for individual gate-decision commands. Today: per-agent mode (strict/allow_all/deny_all).
+- **Codebase-wide Valibot migration** — schemas use Zod; switch is ergonomic-only.
 
 ## File pointers
 
