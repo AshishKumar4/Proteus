@@ -16,6 +16,7 @@ import { ConnectionIndicator } from "@/components/connection-indicator";
 import { MarkdownContent, extractPreviewUrl, CodeBlock } from "@/components/surfaces/shared";
 import { RunTimeline } from "@/components/surfaces/RunTimeline";
 import { WorkSurface, type SurfaceKind } from "@/components/surfaces/WorkSurface";
+import { SupervisePage } from "./SupervisePage";
 import type { TimelineSpan, TimelineKind } from "@/lib/protocol";
 // MODELS are pulled dynamically from /api/user/models (which unions the
 // connected providers' menus). The picker re-fetches on every page mount.
@@ -444,6 +445,7 @@ export default function WorkspacePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = useProteus(agentId);
+  const [altitude, setAltitude] = useState<"run" | "supervise">("run");
   const [surface, setSurface] = useState<SurfaceKind>("Brain");
   const [chatInput, setChatInput] = useState("");
   const [forkFor, setForkFor] = useState<string | null>(null); // message id to fork at, or null
@@ -505,6 +507,28 @@ export default function WorkspacePage() {
           <ArrowsClockwiseIcon size={12} className="animate-spin" />Reconnecting...
         </div>
       )}
+
+      {/* Altitude toggle: RUN (this run, mission-control) ⇄ SUPERVISE (the
+          agent over time — curriculum, runs, automations). */}
+      <div className="flex items-center px-4 py-1.5 border-b p-border shrink-0">
+        <span className="text-xs p-text-2 font-medium truncate">{as?.displayName || agentId}</span>
+        <div className="ml-auto flex items-center gap-0.5 p-elevated rounded-md p-0.5">
+          {(["run", "supervise"] as const).map((a) => (
+            <button key={a} onClick={() => setAltitude(a)}
+              className={`px-2.5 py-1 text-[11px] rounded capitalize transition-colors ${altitude === a ? "p-card p-text font-medium" : "p-text-3 hover:p-text-2"}`}>
+              {a}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {altitude === "supervise" ? (
+        <div className="flex-1 min-h-0">
+          <ErrorBoundary label="Supervise">
+            <SupervisePage rpc={state.rpc} onRunTask={(t) => { setAltitude("run"); state.sendChat(t); }} />
+          </ErrorBoundary>
+        </div>
+      ) : (
       <PanelGroup className="flex-1">
         {/* ── Column A — Chat / Steer ─────────────────────────── */}
         <Panel minSize={24} defaultSize={34}>
@@ -624,6 +648,7 @@ export default function WorkspacePage() {
         </Panel>
 
       </PanelGroup>
+      )}
 
       {forkFor && (
         <ForkModal
