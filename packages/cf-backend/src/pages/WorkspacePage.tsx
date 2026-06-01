@@ -13,7 +13,7 @@ import { useProteus } from "@/hooks/use-proteus";
 import { touchAgent } from "@/lib/user-api";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConnectionIndicator } from "@/components/connection-indicator";
-import { MarkdownContent, extractPreviewUrl } from "@/components/surfaces/shared";
+import { MarkdownContent, extractPreviewUrl, CodeBlock } from "@/components/surfaces/shared";
 import { RunTimeline } from "@/components/surfaces/RunTimeline";
 import { WorkSurface, type SurfaceKind } from "@/components/surfaces/WorkSurface";
 import type { TimelineSpan, TimelineKind } from "@/lib/protocol";
@@ -141,7 +141,13 @@ function ToolCallBlock({ toolName, input, output, isRunning, isError }: {
       )}
       {expanded && (
         <div className="mt-1.5 ml-5 space-y-1 animate-scale-in">
-          {input != null && <pre className="rounded-lg p-elevated border p-border p-2.5 text-xs font-mono p-text-2 max-h-40 overflow-auto">{JSON.stringify(input, null, 2)}</pre>}
+          {/* execute_tools is the agent's primary doing-mechanism: render the
+              LLM-authored JS program legibly, not as escaped JSON. */}
+          {toolName === "execute_tools" && typeof input?.code === "string" ? (
+            <CodeBlock className="language-js">{input.code}</CodeBlock>
+          ) : input != null ? (
+            <pre className="rounded-lg p-elevated border p-border p-2.5 text-xs font-mono p-text-2 max-h-40 overflow-auto">{JSON.stringify(input, null, 2)}</pre>
+          ) : null}
           {output != null && <pre className="rounded-lg p-elevated border p-border p-2.5 text-xs font-mono p-text-2 max-h-40 overflow-auto whitespace-pre-wrap">{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>}
         </div>
       )}
