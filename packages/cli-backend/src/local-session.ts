@@ -34,6 +34,7 @@ import {
 import { createNodeCraftedExecute } from './craft-executor.js';
 import { createNodeExecuteToolFactory } from './execute-tools-factory.js';
 import { createCLIHeadRuntime } from './head-runtime.js';
+import { detectOrphanedFibers } from './fiber.js';
 
 /** Build the ai-SDK chat model both frontends drive runChat with — BYO-key
  *  OpenAI-compatible. Shared so model resolution lives in one place (the
@@ -224,6 +225,23 @@ export class LocalAgentSession implements BackendHost {
   /** End the session: flush a partial evolution window. Call on exit. */
   async end(): Promise<void> {
     await this.orch.flushSession();
+  }
+
+  /**
+   * Recover background jobs orphaned by a previous CLI exit (durable detach). An
+   * interrupted bg:* fiber leaves a row stashed phase 'running'; fail + wake it
+   * (DO onFiberRecovered parity), then clear all stale fiber rows from the prior
+   * run. Call once at startup (no fibers are live yet, so every row is an orphan).
+   */
+  async recoverBackgroundJobs(): Promise<void> {
+    let orphans: ReturnType<typeof detectOrphanedFibers>;
+    try { orphans = detectOrphanedFibers(this.rt.storage.sql); } catch { return; }
+    for (const o of orphans) {
+      if (o.name.startsWith('bg:')) {
+        try { await this.jobRunner.recover(o.snapshot); } catch { /* best effort */ }
+      }
+      try { this.rt.storage.sql`DELETE FROM fibers WHERE id = ${o.id}`; } catch { /* nop */ }
+    }
   }
 
   // ── Internals ──────────────────────────────────────────────────────

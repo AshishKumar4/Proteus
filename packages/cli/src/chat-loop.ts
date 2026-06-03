@@ -41,6 +41,8 @@ export async function runChatLoop(opts: ChatLoopOpts): Promise<void> {
   });
 
   printChatBanner(info, session.toolNames(), !noAutoEvolve);
+  // Recover any background jobs orphaned by a previous exit (durable detach).
+  void session.recoverBackgroundJobs();
 
   const prompt = () => `${ACCENT(info.name)} ${DIM('›')} `;
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: prompt() });

@@ -155,9 +155,10 @@ function ChatApp({ rt, db, info: initialInfo, dbSize, llmConfig, refreshInfo, no
     if (typeof value === 'string') void handleSubmit(value);
   }, [handleSubmit]);
 
-  // Fire a partial-session evolution flush on exit.
+  // Fire a partial-session evolution flush on exit; recover orphaned bg jobs once.
   useEffect(() => {
     globalSessionCleanup = async () => { await session.end(); };
+    void session.recoverBackgroundJobs();
     return () => { globalSessionCleanup = null; };
   }, [session]);
 
