@@ -139,6 +139,15 @@ describe('LocalAgentSession — programmatic turns (reactor / background-job wak
 });
 
 describe('LocalAgentSession — BackendHost + lifecycle', () => {
+  test('always-active skills round-trip through agent_config', () => {
+    const { session } = setup();
+    expect(session.getAlwaysActiveSkills()).toEqual([]);
+    session.setAlwaysActiveSkills(['debugging', 'review']);
+    expect(session.getAlwaysActiveSkills()).toEqual(['debugging', 'review']);
+    session.setAlwaysActiveSkills([]);
+    expect(session.getAlwaysActiveSkills()).toEqual([]);
+  });
+
   test('broadcast fans out as a SessionEvent', () => {
     const { session, events } = setup();
     session.broadcast({ type: 'job_update', jobId: 'x' });

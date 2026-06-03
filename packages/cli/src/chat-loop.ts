@@ -160,6 +160,20 @@ async function handleSlash(
       else console.log(DIM('  Memory is empty.'));
       return 'ok';
     }
+    case '/always': {
+      const args = input.split(/\s+/).slice(1);
+      if (args.length === 0) {
+        const cur = session.getAlwaysActiveSkills();
+        console.log(cur.length
+          ? `\n${DIM('Always-active skills:')} ${cur.join(', ')}\n`
+          : DIM('  No always-active skills set. Usage: /always <name>… (or "none" to clear).'));
+      } else {
+        const names = args[0] === 'none' ? [] : args;
+        session.setAlwaysActiveSkills(names);
+        console.log(DIM(names.length ? `  Always-active skills: ${names.join(', ')}` : '  Cleared always-active skills.'));
+      }
+      return 'ok';
+    }
     case '/tree': {
       const nodes = rt.storage.sql<SearchNode>`SELECT * FROM search_nodes ORDER BY depth, created_at`;
       printSearchTree(nodes);
