@@ -192,6 +192,7 @@ async function fetchOAuthProfile(
   tokens: oauth.TokenEndpointResponse,
 ): Promise<OAuthProfile> {
   if (provider.id === 'github') return fetchGitHubProfile(tokens.access_token);
+  if (provider.id === 'cloudflare') return fetchCloudflareProfile(tokens.access_token);
 
   const idClaims = oauth.getValidatedIdTokenClaims(tokens);
   let userinfo: oauth.UserInfoResponse | null = null;
@@ -218,6 +219,45 @@ async function fetchOAuthProfile(
     emailVerified,
     displayName: stringClaim(userinfo?.name) ?? stringClaim(idClaims?.name) ?? null,
     avatarUrl: stringClaim(userinfo?.picture) ?? stringClaim(idClaims?.picture) ?? null,
+  };
+}
+
+async function fetchCloudflareProfile(accessToken: string | undefined): Promise<OAuthProfile> {
+  if (!accessToken) throw new Error('Cloudflare token response did not include an access token.');
+  const res = await fetch('https://api.cloudflare.com/client/v4/user', {
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) throw new Error(`Cloudflare user lookup failed: ${res.status}`);
+  const body = await res.json() as { success?: boolean; result?: unknown };
+  if (body.success === false) throw new Error('Cloudflare user lookup failed.');
+  return cloudflareUserResultToProfile(body.result);
+}
+
+export function cloudflareUserResultToProfile(input: unknown): OAuthProfile {
+  if (!input || typeof input !== 'object') {
+    throw new Error('Cloudflare user lookup returned an invalid profile.');
+  }
+  const user = input as Record<string, unknown>;
+  const id = stringClaim(user.id);
+  const email = stringClaim(user.email);
+  if (!id) throw new Error('Cloudflare did not return a stable user id.');
+  if (!email) throw new Error('Cloudflare did not return an email address.');
+
+  const firstName = stringClaim(user.first_name);
+  const lastName = stringClaim(user.last_name);
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const username = stringClaim(user.username);
+
+  return {
+    provider: 'cloudflare',
+    providerSub: id,
+    email,
+    emailVerified: true,
+    displayName: fullName || username || null,
+    avatarUrl: null,
   };
 }
 
