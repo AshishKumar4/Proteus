@@ -591,9 +591,9 @@ run_setup_if_requested() {
   fi
   say "Starting Proteus setup..."
   if [ "$YES" = "1" ]; then
-    "$BIN_PATH" setup --origin "$PROTEUS_ORIGIN" --yes < /dev/tty
+    PROTEUS_HOME="$PROTEUS_HOME" "$BIN_PATH" setup --origin "$PROTEUS_ORIGIN" --yes < /dev/tty
   else
-    "$BIN_PATH" setup --origin "$PROTEUS_ORIGIN" < /dev/tty
+    PROTEUS_HOME="$PROTEUS_HOME" "$BIN_PATH" setup --origin "$PROTEUS_ORIGIN" < /dev/tty
   fi
 }
 
@@ -601,23 +601,23 @@ run_connect_if_requested() {
   if [ "$CONNECT" != "1" ]; then return 0; fi
   if has_tty; then
     if [ -n "$CONNECT_LABEL" ]; then
-      "$BIN_PATH" connect --label "$CONNECT_LABEL" < /dev/tty
+      PROTEUS_HOME="$PROTEUS_HOME" "$BIN_PATH" connect --label "$CONNECT_LABEL" < /dev/tty
     else
-      "$BIN_PATH" connect < /dev/tty
+      PROTEUS_HOME="$PROTEUS_HOME" "$BIN_PATH" connect < /dev/tty
     fi
   else
     if [ -n "$CONNECT_LABEL" ]; then
-      "$BIN_PATH" connect --label "$CONNECT_LABEL"
+      PROTEUS_HOME="$PROTEUS_HOME" "$BIN_PATH" connect --label "$CONNECT_LABEL"
     else
-      "$BIN_PATH" connect
+      PROTEUS_HOME="$PROTEUS_HOME" "$BIN_PATH" connect
     fi
   fi
 }
 
 prepare_cli_source() {
   say "Preparing Proteus CLI..."
-  help="$(PROTEUS_REFRESH_SOURCE=1 "$BIN_PATH" --help)" || die "Proteus CLI source setup failed."
-  printf '%s\\n' "$help" | grep -F "setup" >/dev/null 2>&1 \
+  help="$(PROTEUS_HOME="$PROTEUS_HOME" PROTEUS_REFRESH_SOURCE=1 "$BIN_PATH" --help)" || die "Proteus CLI source setup failed."
+  printf '%s\\n' "$help" | grep -Eq '^[[:space:]]+setup[[:space:]]' \
     || die "Downloaded Proteus CLI is missing setup. Retry after the deployment has finished."
 }
 
