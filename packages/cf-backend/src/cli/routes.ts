@@ -646,16 +646,26 @@ case ":$PATH:" in
     if [ "$shell_name" = "zsh" ]; then profile="$HOME/.zshrc";
     elif [ "$shell_name" = "bash" ]; then profile="$HOME/.bashrc";
     else profile="$HOME/.profile"; fi
-    if touch "$profile" 2>/dev/null && ! grep -F "$BIN_DIR" "$profile" >/dev/null 2>&1; then
-      {
-        printf '\\n# Proteus CLI\\n'
-        printf 'export PATH="$HOME/.proteus/bin:$PATH"\\n'
-      } >> "$profile"
+    profile_line="export PATH=\\"$BIN_DIR:\\$PATH\\""
+    if [ "$BIN_DIR" = "$HOME/.proteus/bin" ]; then
+      profile_line='export PATH="$HOME/.proteus/bin:$PATH"'
+    fi
+    if touch "$profile" 2>/dev/null; then
+      if grep -F "$BIN_DIR" "$profile" >/dev/null 2>&1; then
+        :
+      elif [ "$BIN_DIR" = "$HOME/.proteus/bin" ] && grep -F '$HOME/.proteus/bin' "$profile" >/dev/null 2>&1; then
+        :
+      else
+        {
+          printf '\\n# Proteus CLI\\n'
+          printf '%s\\n' "$profile_line"
+        } >> "$profile"
+        say "Added $BIN_DIR to $profile."
+      fi
     elif [ ! -w "$profile" ]; then
       say "Add $BIN_DIR to PATH to use proteus and agent aliases from any directory."
     fi
     export PATH="$BIN_DIR:$PATH"
-    say "Added $BIN_DIR to $profile."
     ;;
 esac
 
