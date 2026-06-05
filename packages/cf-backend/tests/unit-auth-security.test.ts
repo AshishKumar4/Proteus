@@ -56,10 +56,12 @@ describe('auth and desktop security invariants', () => {
       CLOUDFLARE_OAUTH_CLIENT_ID: 'cid',
       CLOUDFLARE_OAUTH_CLIENT_SECRET: 'csec',
     });
+    const routes = source('src/auth/routes.ts');
     expect(provider.id).toBe('cloudflare');
     expect(provider.kind).toBe('oauth');
     expect(provider.scopes).toBe('user-details.read');
     expect(provider.scopes).not.toContain('openid');
+    expect(routes).toContain('processGenericTokenEndpointResponse');
   });
 
   test('Cloudflare OAuth profile uses the Cloudflare API user shape', () => {

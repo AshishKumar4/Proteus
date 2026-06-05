@@ -132,11 +132,15 @@ async function finishOAuth(request: Request, env: Env, ctx: ExecutionContext | u
   const state = url.searchParams.get('state');
   if (!state) return html('Sign in failed', '<p>OAuth callback is missing state.</p>', { status: 400 });
 
+  let stage = 'state';
   try {
     const savedState = await consumeOAuthState(env.AUTH_DB, state, provider.id);
+    stage = 'metadata';
     const as = await getAuthorizationServer(provider);
     const client: oauth.Client = { client_id: provider.clientId };
+    stage = 'authorization_response';
     const callbackParams = oauth.validateAuthResponse(as, client, url.searchParams, state);
+    stage = 'token_exchange';
     const tokenResponse = await oauth.authorizationCodeGrantRequest(
       as,
       client,
@@ -145,11 +149,15 @@ async function finishOAuth(request: Request, env: Env, ctx: ExecutionContext | u
       savedState.redirectUri,
       savedState.codeVerifier,
     );
-    const tokens = await oauth.processAuthorizationCodeResponse(as, client, tokenResponse, {
-      expectedNonce: savedState.nonce ?? oauth.expectNoNonce,
-      requireIdToken: provider.kind === 'oidc',
-    });
+    const tokens = provider.kind === 'oidc'
+      ? await oauth.processAuthorizationCodeResponse(as, client, tokenResponse, {
+          expectedNonce: savedState.nonce ?? oauth.expectNoNonce,
+          requireIdToken: true,
+        })
+      : await oauth.processGenericTokenEndpointResponse(as, client, tokenResponse);
+    stage = 'profile';
     const profile = await fetchOAuthProfile(provider, as, client, tokens);
+    stage = 'session';
     const session = await createSession(env, profile);
     ctx?.waitUntil(cleanupExpiredAuthRows(env.AUTH_DB));
     const destination = new URL(savedState.returnTo, url.origin).toString();
@@ -161,9 +169,10 @@ async function finishOAuth(request: Request, env: Env, ctx: ExecutionContext | u
       headers,
     });
   } catch (e) {
-    console.warn('[auth] OAuth callback failed:', e instanceof Error ? e.message : e);
+    console.warn(`[auth] OAuth callback failed at ${stage}:`, e instanceof Error ? e.message : e);
     return html('Sign in failed', `
       <p class="lede">The sign-in request could not be completed. Return to sign in and try again.</p>
+      <p class="muted">Failure stage: <code>${escapeHtml(stage)}</code></p>
       <div class="actions"><a class="provider" href="/login?prompt=login">Return to sign in</a></div>
     `, { status: 400 });
   }
