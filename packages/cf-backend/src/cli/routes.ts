@@ -4,19 +4,13 @@ import { publicHtmlHeaders } from '../lib/security-headers.js';
 import { err, escapeHtml, json, safeJson } from '../lib/http.js';
 import { randomToken, timingSafeEqual } from '../lib/crypto.js';
 import type { OrchestratorAgent } from '../orchestrator.js';
-import type { UserDO } from '../user/user-do.js';
-import { CliAuthCodeError, RateLimitError, approveCliAuth, inspectCliAuth, pollCliAuth, startCliAuth } from './auth-store.js';
+import {
+  CliAuthCodeError, RateLimitError, approveCliAuth, authenticateCliToken,
+  inspectCliAuth, pollCliAuth, startCliAuth, type CliTokenIdentity,
+} from './auth-store.js';
 import { buildCliInstallCommand } from './install-command.js';
 import { listAvailableModels } from '../user/available-models.js';
 import { claimOwnedAgent, handleCreateAgentRequest } from '../user/agent-access.js';
-
-interface CliIdentity {
-  userId: string;
-  email: string;
-  displayName: string | null;
-  tokenHash: string;
-  userDO: DurableObjectStub<UserDO>;
-}
 
 const CLI_SOURCE_TARBALL_PATH = '/downloads/proteus-source.tar.gz';
 const CLI_SOURCE_TARBALL_SHA256_PATH = `${CLI_SOURCE_TARBALL_PATH}.sha256`;
@@ -364,7 +358,7 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
   return err(404, `No such CLI route: ${method} ${path}`);
 }
 
-async function cliAgent(env: Env, cli: CliIdentity, name: string): Promise<DurableObjectStub<OrchestratorAgent> | Response> {
+async function cliAgent(env: Env, cli: CliTokenIdentity, name: string): Promise<DurableObjectStub<OrchestratorAgent> | Response> {
   const result = await claimOwnedAgent(env, cli.userId, name);
   if (!result.ok) return err(result.status, result.error);
   return result.agent;
@@ -392,34 +386,9 @@ function clientKey(request: Request): string {
     ?? 'unknown';
 }
 
-async function authenticateCli(request: Request, env: Env): Promise<CliIdentity | Response> {
-  const token = readBearer(request);
-  if (!token) return err(401, 'Missing Authorization: Bearer <token>');
-  const userId = parseCliTokenUserId(token);
-  if (!userId) return err(401, 'Malformed CLI token');
-  const userDO = env.UserDO.get(env.UserDO.idFromName(userId)) as DurableObjectStub<UserDO>;
-  const verified = await userDO.verifyCliToken(token);
-  if (!verified.ok || !verified.user || !verified.tokenHash) {
-    return err(401, verified.error ?? 'Invalid CLI token');
-  }
-  return {
-    userId: verified.user.id,
-    email: verified.user.email,
-    displayName: verified.user.displayName,
-    tokenHash: verified.tokenHash,
-    userDO,
-  };
-}
-
-function readBearer(request: Request): string | null {
-  const header = request.headers.get('authorization') ?? '';
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match?.[1]?.trim() || null;
-}
-
-function parseCliTokenUserId(token: string): string | null {
-  const match = /^ptc_([a-f0-9]{32})_[A-Za-z0-9_-]{24,}$/.exec(token);
-  return match?.[1] ?? null;
+async function authenticateCli(request: Request, env: Env): Promise<CliTokenIdentity | Response> {
+  const result = await authenticateCliToken(request, env);
+  return result.ok ? result.identity : err(401, result.error);
 }
 
 async function renderBrowserApproval(request: Request, env: Env): Promise<Response> {

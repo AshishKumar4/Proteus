@@ -9,6 +9,8 @@
  *   4. / — public landing page when no Proteus session is present.
  *   5. /install, /install.sh, /downloads/proteus, /api/cli/* — CLI install/auth/API.
  *   6. /api/health — public build-info endpoint (no auth).
+ *   6b. /mcp/v1/* — MCP server; CLI-bearer-token or session auth + ownership
+ *       enforced inside (external MCP clients can't do browser OAuth).
  *   7. AUTH GATE — every other request needs a Proteus browser session
  *      (or DEV_USER_EMAIL in local/staging dev).
  *   8. /api/user/* — user-scoped (profile, agents, credentials, codex flow).
@@ -98,9 +100,6 @@ function extractAgentName(pathname: string): string | null {
   if (m) return decodeURIComponent(m[1]);
   // /agents/orchestrator-agent/<name>/...  (Think framework convention)
   m = pathname.match(/^\/agents\/[^/]+\/([^/]+)/);
-  if (m) return decodeURIComponent(m[1]);
-  // /mcp/v1/<name>
-  m = pathname.match(/^\/mcp\/v1\/([^/]+)/);
   if (m) return decodeURIComponent(m[1]);
   return null;
 }
@@ -194,6 +193,14 @@ export default {
     const healthResp = handleHealthRequest(request);
     if (healthResp) return healthResp;
 
+    // 6b. MCP server — its own auth (CLI bearer token for external MCP
+    //     clients, which can never pass the browser-session gate below;
+    //     session/dev identity otherwise) + per-agent ownership inside.
+    if (url.pathname.startsWith("/mcp/v1/")) {
+      const mcpResp = await handleMcpRequest(request, env);
+      if (mcpResp) return mcpResp;
+    }
+
     // 7. Public bypass list.
     if (isPublicPath(url.pathname)) {
       return env.ASSETS.fetch(request);
@@ -247,8 +254,6 @@ export default {
 
       const runEventsResp = await handleRunEventsRequest(reqWithId, env);
       if (runEventsResp) return withD1Bookmark(runEventsResp, identity);
-      const mcpResp = await handleMcpRequest(reqWithId, env);
-      if (mcpResp) return withD1Bookmark(mcpResp, identity);
       // EventsHub authenticated routes: /triggers, /events
       const hubResp = await handleHubRequest(reqWithId, env, agentName);
       if (hubResp) return withD1Bookmark(hubResp, identity);
@@ -270,7 +275,7 @@ function appendIdentityHeaders(h: Headers, identity: AuthIdentity): Headers {
 
 function wantsHtml(request: Request): boolean {
   const url = new URL(request.url);
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/agents/') || url.pathname.startsWith('/mcp/')) {
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/agents/')) {
     return false;
   }
   const accept = request.headers.get('accept') ?? '';

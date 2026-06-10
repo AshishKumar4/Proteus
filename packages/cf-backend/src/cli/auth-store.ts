@@ -68,6 +68,58 @@ type CliAuthEnv = {
   UserDO: DurableObjectNamespace<UserDO>;
 };
 
+export interface CliTokenIdentity {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  tokenHash: string;
+  userDO: DurableObjectStub<UserDO>;
+}
+
+export type CliTokenAuth =
+  | { ok: true; identity: CliTokenIdentity }
+  | { ok: false; error: string };
+
+export function readBearer(request: Request): string | null {
+  const header = request.headers.get('authorization') ?? '';
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  return match?.[1]?.trim() || null;
+}
+
+function parseCliTokenUserId(token: string): string | null {
+  const match = /^ptc_([a-f0-9]{32})_[A-Za-z0-9_-]{24,}$/.exec(token);
+  return match?.[1] ?? null;
+}
+
+/** Authenticate a `ptc_…` CLI bearer token from the Authorization header.
+ *  Routes to the UserDO embedded in the token, verifies the stored hash.
+ *  Shared by the CLI HTTP API and the MCP server (external MCP clients
+ *  can't do browser OAuth; the CLI token is their per-user credential). */
+export async function authenticateCliToken(
+  request: Request,
+  env: Pick<CliAuthEnv, 'UserDO'>,
+): Promise<CliTokenAuth> {
+  const token = readBearer(request);
+  if (!token) return { ok: false, error: 'Missing Authorization: Bearer <token>' };
+  const userId = parseCliTokenUserId(token);
+  if (!userId) return { ok: false, error: 'Malformed CLI token' };
+  const userDO = env.UserDO.get(env.UserDO.idFromName(userId));
+  const verified = await userDO.verifyCliToken(token);
+  if (!verified.ok || !verified.user || !verified.tokenHash) {
+    return { ok: false, error: verified.error ?? 'Invalid CLI token' };
+  }
+  return {
+    ok: true,
+    identity: {
+      userId: verified.user.id,
+      email: verified.user.email,
+      displayName: verified.user.displayName,
+      tokenHash: verified.tokenHash,
+      userDO,
+    },
+  };
+}
+
 export async function startCliAuth(
   env: CliAuthEnv,
   origin: string,
