@@ -138,6 +138,7 @@
       "name": "@proteus/test-utils",
       "version": "0.1.0",
       "dependencies": {
+        "@proteus/agent-utils": "workspace:*",
         "@proteus/core": "workspace:*",
       },
     },
