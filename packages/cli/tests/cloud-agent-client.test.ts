@@ -88,6 +88,16 @@ async function waitFor<T>(probe: () => T | undefined, label: string, timeoutMs =
   throw new Error(`timed out waiting for ${label}`);
 }
 
+function newClient(mock: MockAgentServer): CloudAgentClient {
+  return new CloudAgentClient({
+    origin: mock.origin,
+    token: 'ptc_token',
+    agentName: 'helios',
+    cloudName: 'helios',
+    session: { noSession: true },
+  });
+}
+
 function chatRequestFrame(mock: MockAgentServer): { id: string; body: Record<string, unknown> } {
   const frame = mock.frames.find((f) => f.type === CHAT_MESSAGE_TYPES.USE_CHAT_REQUEST);
   if (!frame) throw new Error('no chat request frame received');
@@ -102,10 +112,11 @@ function responseChunk(id: string, chunk: Record<string, unknown>, done = false)
 describe('CloudAgentClient protocol', () => {
   test('send transmits only the new user message and streams the reply', async () => {
     const mock = startMockAgentServer();
-    const client = new CloudAgentClient({ origin: mock.origin, token: 'ptc_token', name: 'helios' });
+    const client = newClient(mock);
     const events: AgentClientEvent[] = [];
+    client.subscribe((event) => events.push(event));
 
-    const turn = client.send('hello agent', { cwd: '/work/dir', onEvent: (event) => events.push(event) });
+    const turn = client.send('hello agent', { cwd: '/work/dir' });
     const request = await waitFor(
       () => mock.frames.some((f) => f.type === CHAT_MESSAGE_TYPES.USE_CHAT_REQUEST) ? chatRequestFrame(mock) : undefined,
       'chat request frame',
@@ -135,14 +146,14 @@ describe('CloudAgentClient protocol', () => {
     expect(result.steps).toBe(1);
     expect(result.toolCalls).toEqual([{ name: 'memory', args: { q: 'x' }, result: 'found it' }]);
     expect(events.map((event) => event.type)).toEqual([
-      'text-delta', 'tool-call', 'tool-result', 'step-finish', 'text-delta',
+      'turn-start', 'text-delta', 'tool-call', 'tool-result', 'step-finish', 'text-delta', 'turn-end',
     ]);
-    client.close();
+    await client.close();
   });
 
   test('error frame rejects the turn with the server message', async () => {
     const mock = startMockAgentServer();
-    const client = new CloudAgentClient({ origin: mock.origin, token: 'ptc_token', name: 'helios' });
+    const client = newClient(mock);
 
     const turn = client.send('boom');
     const request = await waitFor(
@@ -152,12 +163,12 @@ describe('CloudAgentClient protocol', () => {
     mock.reply({ type: CHAT_MESSAGE_TYPES.USE_CHAT_RESPONSE, id: request.id, body: 'model exploded', done: true, error: true });
 
     await expect(turn).rejects.toThrow('model exploded');
-    client.close();
+    await client.close();
   });
 
   test('tool-output-error records the error text as the tool result', async () => {
     const mock = startMockAgentServer();
-    const client = new CloudAgentClient({ origin: mock.origin, token: 'ptc_token', name: 'helios' });
+    const client = newClient(mock);
 
     const turn = client.send('run a tool');
     const request = await waitFor(
@@ -170,12 +181,12 @@ describe('CloudAgentClient protocol', () => {
 
     const result = await turn;
     expect(result.toolCalls).toEqual([{ name: 'shell', args: {}, result: 'command not found' }]);
-    client.close();
+    await client.close();
   });
 
   test('stop sends cf_agent_chat_request_cancel and resolves with the partial output', async () => {
     const mock = startMockAgentServer();
-    const client = new CloudAgentClient({ origin: mock.origin, token: 'ptc_token', name: 'helios' });
+    const client = newClient(mock);
 
     const turn = client.send('long task');
     const request = await waitFor(
@@ -194,12 +205,12 @@ describe('CloudAgentClient protocol', () => {
       'cancel frame',
     );
     expect(cancel.id).toBe(request.id);
-    client.close();
+    await client.close();
   });
 
   test('stream-resume frames for other clients are ignored, own turns are acked', async () => {
     const mock = startMockAgentServer();
-    const client = new CloudAgentClient({ origin: mock.origin, token: 'ptc_token', name: 'helios' });
+    const client = newClient(mock);
 
     const turn = client.send('hello');
     const request = await waitFor(
@@ -218,12 +229,12 @@ describe('CloudAgentClient protocol', () => {
 
     mock.reply(responseChunk(request.id, { type: 'text-delta', delta: 'ok' }, true));
     await expect(turn).resolves.toMatchObject({ text: 'ok' });
-    client.close();
+    await client.close();
   });
 
   test('connection close mid-turn rejects the in-flight send', async () => {
     const mock = startMockAgentServer();
-    const client = new CloudAgentClient({ origin: mock.origin, token: 'ptc_token', name: 'helios' });
+    const client = newClient(mock);
 
     const turn = client.send('hello');
     await waitFor(
@@ -233,6 +244,6 @@ describe('CloudAgentClient protocol', () => {
     mock.socket().close();
 
     await expect(turn).rejects.toThrow('Cloud agent connection closed.');
-    client.close();
+    await client.close();
   });
 });
