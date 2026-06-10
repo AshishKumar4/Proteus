@@ -225,7 +225,6 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
         secret: body.secret,
         accepted_content_type: body.accepted_content_type,
         rate_limit_per_min: body.rate_limit_per_min,
-        trust: 'owner',
       }), { status: 201 });
     } catch (e) {
       return err(400, (e as Error).message);
@@ -365,59 +364,15 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
   return err(404, `No such CLI route: ${method} ${path}`);
 }
 
-async function cliAgent(env: Env, cli: CliIdentity, name: string): Promise<CliAgentRpc | Response> {
+async function cliAgent(env: Env, cli: CliIdentity, name: string): Promise<DurableObjectStub<OrchestratorAgent> | Response> {
   if (!(await cli.userDO.hasAgent(name))) return err(404, `Agent ${name} not found.`);
-  const agent = env.OrchestratorAgent.get(env.OrchestratorAgent.idFromName(name)) as unknown as CliAgentRpc;
+  const agent = env.OrchestratorAgent.get(env.OrchestratorAgent.idFromName(name));
   try {
     await agent.claimOwner(cli.userId);
     return agent;
   } catch (e) {
     return err(403, (e as Error).message);
   }
-}
-
-interface CliAgentRpc {
-  claimOwner(userId: string): Promise<unknown>;
-  getAgentStatus(): Promise<unknown>;
-  getToolDescriptions(): Promise<unknown>;
-  getChatHistory(limit?: number): Promise<unknown>;
-  listPendingConsents(): Promise<unknown>;
-  resolveDeviceConsent(consentId: string, decision: 'once' | 'always' | 'deny'): Promise<unknown>;
-  getStoredModelSpec(): Promise<unknown>;
-  setModel(spec: string): Promise<unknown>;
-  listTriggers(): Promise<unknown>;
-  createDurableWebhook(opts: {
-    label: string;
-    auth_mode: 'hmac' | 'bearer' | 'mtls';
-    secret?: string;
-    accepted_content_type?: string;
-    rate_limit_per_min?: number;
-    trust?: 'authenticated' | 'owner';
-  }): Promise<unknown>;
-  createTimerTrigger(opts: {
-    cron?: string;
-    atMs?: number;
-    label?: string;
-    payload?: Record<string, unknown>;
-    trust?: 'authenticated' | 'owner';
-  }): Promise<unknown>;
-  cancelTrigger(triggerId: string): Promise<unknown>;
-  listBackgroundJobs(limit?: number): Promise<unknown>;
-  cancelBackgroundJob(jobId: string): Promise<unknown>;
-  cancelCurrentWork(): Promise<unknown>;
-  getWorkspaceSnapshot(): Promise<unknown>;
-  getMemoryContent(): Promise<unknown>;
-  searchMemoryHybrid(query: string, limit?: number): Promise<unknown>;
-  listRecentEvents(opts?: { variant?: string; since?: number; limit?: number }): Promise<unknown>;
-  getRunTimeline(opts?: { runId?: string; limit?: number }): Promise<unknown>;
-  getMctsTree(): Promise<unknown>;
-  getMctsNodeDetail(nodeId: string): Promise<unknown>;
-  getHeadRuns(limit?: number): Promise<unknown>;
-  getGepaRuns(limit?: number): Promise<unknown>;
-  getGepaRun(runId: string): Promise<unknown>;
-  getExecutors(): Promise<unknown>;
-  executeInExecutor(executorId: string, command: string): Promise<unknown>;
-  getProductChangeBoard(limit?: number): Promise<unknown>;
 }
 
 function readIntParam(url: URL, key: string): number | undefined {

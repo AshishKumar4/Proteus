@@ -261,6 +261,6 @@ describe('CLI control routes', () => {
     expect(calls).toContain('work:cancel');
     expect(calls).toContain('memory:search:repo:3');
     expect(calls).toContain('executors:exec:workspace:pwd');
-    expect(calls).toContain('triggers:webhook:{"label":"github","auth_mode":"hmac","secret":"secret","trust":"owner"}');
+    expect(calls).toContain('triggers:webhook:{"label":"github","auth_mode":"hmac","secret":"secret"}');
   });
 });
