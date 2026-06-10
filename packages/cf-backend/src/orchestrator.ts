@@ -3957,10 +3957,13 @@ export class OrchestratorAgent extends Think<Env> {
     };
   }
 
-  /** Create a durable webhook trigger. Returns the public URL. Operator
-   *  UI calls this through `/api/agents/<name>/triggers` (step-up auth +
-   *  CSRF enforced at the HTTP layer). */
-  @callable()
+  /** Create a durable webhook trigger. Returns the public URL.
+   *
+   *  Deliberately NOT @callable: webhook creation is step-up gated, and the
+   *  gate (auth/session isFreshAuthTime) lives in the only two entry points —
+   *  the web route POST /api/agents/<name>/triggers and the CLI route
+   *  POST /api/cli/agents/<name>/triggers/webhook. Exposing this over the
+   *  WebSocket RPC surface would bypass that gate. */
   async createDurableWebhook(opts: {
     label: string;
     auth_mode: 'hmac' | 'bearer' | 'mtls';

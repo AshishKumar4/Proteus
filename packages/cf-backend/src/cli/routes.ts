@@ -1,5 +1,5 @@
 import type { AuthIdentity } from '../auth/session.js';
-import { AuthError, authenticateRequest } from '../auth/session.js';
+import { AuthError, authenticateRequest, isFreshAuthTime } from '../auth/session.js';
 import { publicHtmlHeaders } from '../lib/security-headers.js';
 import { err, escapeHtml, json, safeJson } from '../lib/http.js';
 import { randomToken, timingSafeEqual } from '../lib/crypto.js';
@@ -202,6 +202,14 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
   if (webhookTriggerMatch && method === 'POST') {
     const agent = await cliAgent(env, cli, decodeURIComponent(webhookTriggerMatch[1]));
     if (agent instanceof Response) return agent;
+    // Webhook creation is step-up gated on every path. The CLI's
+    // interactive-auth timestamp is its token mint time (minting requires
+    // a live browser approval), so a fresh `proteus auth` satisfies it.
+    const tokens = await cli.userDO.listCliTokens();
+    const mintedAt = tokens.find((t) => t.tokenHash === cli.tokenHash)?.createdAt ?? null;
+    if (!isFreshAuthTime(mintedAt)) {
+      return err(401, 'step-up auth required: run `proteus auth` again — webhook creation needs a sign-in within the last 5 minutes');
+    }
     const body = await safeJson<{
       label?: string;
       auth_mode?: 'hmac' | 'bearer' | 'mtls';

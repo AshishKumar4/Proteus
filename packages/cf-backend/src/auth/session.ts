@@ -26,6 +26,18 @@ export interface AuthIdentity {
   d1Bookmark?: string | null;
 }
 
+/** Step-up (fresh-auth) window for sensitive operations — creating webhook
+ *  ingress endpoints requires an interactive sign-in within this window. */
+export const STEP_UP_WINDOW_MS = 5 * 60 * 1000;
+
+/** Single step-up rule for every webhook-creation path: web sessions check
+ *  the session auth time; the CLI checks its token mint time (minting
+ *  requires a live browser approval, so it is the CLI's interactive-auth
+ *  timestamp). */
+export function isFreshAuthTime(authTimeMs: number | null | undefined, now = Date.now()): boolean {
+  return typeof authTimeMs === 'number' && authTimeMs > 0 && now - authTimeMs <= STEP_UP_WINDOW_MS;
+}
+
 export class AuthError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);

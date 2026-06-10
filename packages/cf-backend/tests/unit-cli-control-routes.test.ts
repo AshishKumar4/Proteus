@@ -4,7 +4,7 @@ import { handleCliRequest } from '../src/cli/routes.js';
 const USER_ID = '0123456789abcdef0123456789abcdef';
 const TOKEN = `ptc_${USER_ID}_abcdefghijklmnopqrstuvwxyz`;
 
-function setupEnv() {
+function setupEnv(opts: { tokenMintedAt?: number } = {}) {
   const calls: string[] = [];
   const userDO = {
     async verifyCliToken(token: string) {
@@ -13,6 +13,15 @@ function setupEnv() {
         tokenHash: 'hash',
         user: { id: USER_ID, email: 'ashish@example.com', displayName: 'Ashish' },
       };
+    },
+    async listCliTokens() {
+      return [{
+        tokenHash: 'hash',
+        label: 'terminal',
+        createdAt: opts.tokenMintedAt ?? Date.now(),
+        expiresAt: Date.now() + 60_000,
+        lastUsedAt: null,
+      }];
     },
     async hasAgent(name: string) {
       return name === 'jarvis';
@@ -292,5 +301,38 @@ describe('shared ownership claim status mapping', () => {
   test('infra failure during claim → 500, not 403', async () => {
     const res = await handleCliRequest(cliRequest('/api/cli/agents/jarvis/status'), envWithClaimFailure('SQLITE_ERROR: no such table: agent_identity'));
     expect(res?.status).toBe(500);
+  });
+});
+
+describe('CLI webhook creation step-up gate', () => {
+  const webhookInit = {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ label: 'github', auth_mode: 'hmac' as const }),
+  };
+
+  test('freshly-minted token (recent proteus auth) may create webhooks', async () => {
+    const { env, calls } = setupEnv({ tokenMintedAt: Date.now() - 60_000 });
+    const res = await handleCliRequest(cliRequest('/api/cli/agents/jarvis/triggers/webhook', webhookInit), env);
+    expect(res?.status).toBe(201);
+    expect(calls.some((c) => c.startsWith('triggers:webhook:'))).toBe(true);
+  });
+
+  test('long-lived token is denied with 401 step-up (same policy as the web route)', async () => {
+    const { env, calls } = setupEnv({ tokenMintedAt: Date.now() - 24 * 60 * 60 * 1000 });
+    const res = await handleCliRequest(cliRequest('/api/cli/agents/jarvis/triggers/webhook', webhookInit), env);
+    expect(res?.status).toBe(401);
+    expect((await res?.json() as { error: string }).error).toContain('step-up auth required');
+    expect(calls.some((c) => c.startsWith('triggers:webhook:'))).toBe(false);
+  });
+
+  test('timer triggers are not step-up gated (matches web semantics)', async () => {
+    const { env } = setupEnv({ tokenMintedAt: Date.now() - 24 * 60 * 60 * 1000 });
+    const res = await handleCliRequest(cliRequest('/api/cli/agents/jarvis/triggers/timer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ atMs: Date.now() + 1000 }),
+    }), env);
+    expect(res?.status).toBe(201);
   });
 });
