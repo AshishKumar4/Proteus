@@ -32,7 +32,7 @@ import type { AuthIdentity } from '../auth/session.js';
 import type { UserDO } from './user-do.js';
 import { buildCliAuthCommand, buildCliInstallCommand, buildCliSetupCommand, normalizeCliOrigin } from '../cli/install-command.js';
 import { listAvailableModels } from './available-models.js';
-import { handleCreateAgentRequest } from './agent-access.js';
+import { handleCreateAgentRequest, notifyAgentsCredentialsChanged } from './agent-access.js';
 import { err, json, safeJson } from '../lib/http.js';
 
 function getUserDOStub(env: Env, userId: string): DurableObjectStub<UserDO> {
@@ -117,12 +117,16 @@ export async function handleUserRequest(
     if (method === 'POST') {
       const body = await safeJson(request);
       if (body === null) return err(400, 'Body must be JSON');
-      try { await stub.setCredential(key, body); return json({ ok: true }); }
+      try { await stub.setCredential(key, body); }
       catch (e) { return err(400, (e as Error).message); }
+      notifyAgentsCredentialsChanged(env, stub, ctx);
+      return json({ ok: true });
     }
     if (method === 'DELETE') {
-      try { await stub.deleteCredential(key); return json({ ok: true }); }
+      try { await stub.deleteCredential(key); }
       catch (e) { return err(400, (e as Error).message); }
+      notifyAgentsCredentialsChanged(env, stub, ctx);
+      return json({ ok: true });
     }
   }
 
@@ -132,6 +136,7 @@ export async function handleUserRequest(
   }
   if (path === '/codex' && method === 'DELETE') {
     await stub.disconnectCodex();
+    notifyAgentsCredentialsChanged(env, stub, ctx);
     return json({ ok: true });
   }
   if (path === '/codex/start' && method === 'POST') {
@@ -139,8 +144,11 @@ export async function handleUserRequest(
     catch (e) { return err(502, (e as Error).message); }
   }
   if (path === '/codex/poll' && method === 'POST') {
-    try { return json(await stub.pollCodexDeviceFlow()); }
-    catch (e) { return err(502, (e as Error).message); }
+    try {
+      const status = await stub.pollCodexDeviceFlow();
+      if (status.connected) notifyAgentsCredentialsChanged(env, stub, ctx);
+      return json(status);
+    } catch (e) { return err(502, (e as Error).message); }
   }
 
   // ── Config (defaults) ──────────────────────────────────────────────

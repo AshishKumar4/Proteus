@@ -3556,10 +3556,9 @@ export class OrchestratorAgent extends Think<Env> {
   // stub at fetch time. Use the `/api/user/codex/*` routes (or the user
   // settings UI) to connect ChatGPT / save BYO API keys.
 
-  /** Worker calls this when a credential mutation in UserDO should drop
-   *  cached provider/model state in this agent. Cheap; no-op if nothing
-   *  is cached. */
-  @callable()
+  /** Worker fan-out target (user/agent-access notifyAgentsCredentialsChanged):
+   *  invoked after credential mutations in UserDO so cached provider/model
+   *  state in this agent is dropped. Cheap; no-op if nothing is cached. */
   async onCredentialsChanged(): Promise<{ ok: true }> {
     this.invalidateModelCaches();
     return { ok: true };

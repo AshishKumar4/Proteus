@@ -32,6 +32,26 @@ export async function handleCreateAgentRequest(
   }
 }
 
+/** Fan a credential-change notification out to the user's active agents so
+ *  each drops its cached provider/model state (onCredentialsChanged) —
+ *  otherwise a disconnected provider stays "available" until the next
+ *  claimOwner/setModel. Fire-and-forget; runs via waitUntil when available. */
+export function notifyAgentsCredentialsChanged(
+  env: Env,
+  userDO: DurableObjectStub<UserDO>,
+  ctx?: ExecutionContext,
+): void {
+  const task = (async () => {
+    const agents = await userDO.listAgents();
+    await Promise.allSettled(agents
+      .filter((a) => a.archivedAt === null)
+      .map((a) => env.OrchestratorAgent.get(env.OrchestratorAgent.idFromName(a.name)).onCredentialsChanged()));
+  })().catch((e: unknown) => {
+    console.warn('[agent-access] credential-change fanout failed:', e instanceof Error ? e.message : e);
+  });
+  ctx?.waitUntil(task);
+}
+
 export type OwnedAgentResult =
   | { ok: true; agent: DurableObjectStub<OrchestratorAgent> }
   | { ok: false; status: number; error: string };
