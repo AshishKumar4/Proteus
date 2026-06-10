@@ -1,3 +1,4 @@
+import { ORCHESTRATOR_AGENT_SLUG } from '@proteus/core';
 import type { AuthIdentity } from '../auth/session.js';
 import { AuthError, authenticateRequest, isFreshAuthTime } from '../auth/session.js';
 import { publicHtmlHeaders } from '../lib/security-headers.js';
@@ -107,7 +108,7 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
     if (!(await cli.userDO.hasAgent(name))) return err(404, `Agent ${name} not found.`);
     const issued = await cli.userDO.issueCliAgentConnectTicket({
       userId: cli.userId,
-      agentClass: 'orchestrator-agent',
+      agentClass: ORCHESTRATOR_AGENT_SLUG,
       agentName: name,
       cliTokenHash: cli.tokenHash,
       capabilities: ['agent.websocket'],

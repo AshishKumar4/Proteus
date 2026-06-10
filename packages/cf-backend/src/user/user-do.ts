@@ -21,6 +21,7 @@ import {
   type AgentMcpOAuthProvider,
 } from "agents/mcp/do-oauth-client-provider";
 import {
+  ORCHESTRATOR_AGENT_SLUG,
   nanoid,
   createProductChangeStore,
   productChangeSqlFromExec,
@@ -388,14 +389,14 @@ export class UserDO extends Agent<Env> {
 
   async issueCliAgentConnectTicket(input: {
     userId: string;
-    agentClass: 'orchestrator-agent';
+    agentClass: typeof ORCHESTRATOR_AGENT_SLUG;
     agentName: string;
     cliTokenHash: string;
     capabilities?: Array<typeof CLI_AGENT_WEBSOCKET_CAPABILITY>;
   }): Promise<{ ok: boolean; ticket?: string; expiresAt?: number; error?: string }> {
     this.ensureInit();
     if (!/^[a-f0-9]{32}$/.test(input.userId)) return { ok: false, error: 'invalid user id' };
-    if (input.agentClass !== 'orchestrator-agent') return { ok: false, error: 'invalid agent class' };
+    if (input.agentClass !== ORCHESTRATOR_AGENT_SLUG) return { ok: false, error: 'invalid agent class' };
     if (!/^[a-f0-9]{64}$/.test(input.cliTokenHash)) return { ok: false, error: 'invalid token hash' };
     validateAgentName(input.agentName);
     if (!(await this.hasAgent(input.agentName))) return { ok: false, error: 'agent not found' };
@@ -432,7 +433,7 @@ export class UserDO extends Agent<Env> {
     ticket: string,
     expected: {
       userId: string;
-      agentClass: 'orchestrator-agent';
+      agentClass: typeof ORCHESTRATOR_AGENT_SLUG;
       agentName: string;
       capability: typeof CLI_AGENT_WEBSOCKET_CAPABILITY;
     },
