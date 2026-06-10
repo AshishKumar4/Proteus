@@ -1,5 +1,6 @@
 import { generateText } from 'ai';
 import {
+  DEFAULT_WORKERS_AI_MODEL_SPEC,
   agentIdentityPrompt,
   createAgentNameFromMission,
   deriveAgentTitle,
@@ -8,7 +9,7 @@ import {
 } from '@proteus/core';
 import type { OrchestratorAgent } from '../orchestrator.js';
 import { createAgentProviderRegistry } from '../providers/agent-registry.js';
-import { DEFAULT_WORKERS_AI_MODEL_SPEC, listAvailableModels, type ModelMenuEntry } from './available-models.js';
+import { listAvailableModels, type ModelMenuEntry } from './available-models.js';
 import type { AgentEntry, UserDO } from './user-do.js';
 
 export interface CreateCloudAgentInput {

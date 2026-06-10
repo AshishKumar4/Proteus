@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import {
   CODEX_BASE_URL,
+  DEFAULT_WORKERS_AI_MODEL_ID,
   type LLMProviderConfig,
   type OAuthCredential,
 } from '@proteus/core';
@@ -50,7 +51,6 @@ const RESERVED_ALIASES = new Set([
   'uninstall',
   'doctor',
 ]);
-const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.6';
 const DEFAULT_ORIGIN = 'https://proteus.ashishkumarsingh.com';
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -303,7 +303,7 @@ export function resolveLLMConfig(opts?: {
       name: model?.startsWith('@cf/') ? 'workers-ai' : 'openai-compat',
       baseURL,
       headers: { 'Authorization': auth },
-      model: directEndpointModelId(model ?? DEFAULT_MODEL),
+      model: directEndpointModelId(model ?? DEFAULT_WORKERS_AI_MODEL_ID),
     };
   }
 
@@ -323,7 +323,7 @@ export function resolveLLMConfig(opts?: {
     );
   }
 
-  return { name: 'openai-compat', baseURL, headers: { 'Authorization': auth }, model: directEndpointModelId(model ?? DEFAULT_MODEL) };
+  return { name: 'openai-compat', baseURL, headers: { 'Authorization': auth }, model: directEndpointModelId(model ?? DEFAULT_WORKERS_AI_MODEL_ID) };
 }
 
 /** Local provider credentials used by the CLI backend's provider registry.
