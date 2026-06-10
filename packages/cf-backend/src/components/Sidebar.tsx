@@ -15,14 +15,17 @@
  *   └─────────────────┘
  */
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Link, NavLink, useParams } from "react-router-dom";
+import { Link, NavLink, useMatch, useNavigate } from "react-router-dom";
 import { BrainIcon, PlusIcon, GearIcon, TrashIcon, SignOutIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { listAgents, removeAgent, getProfile, type AgentEntry, type UserProfile } from "../lib/user-api";
 import { CreateAgentModal } from "./CreateAgentModal";
 import { ModeToggle } from "./mode-toggle";
 
 export default function Sidebar() {
-  const { agentId } = useParams();
+  // useParams can't see :agentId from here (the Sidebar renders outside the
+  // route's Outlet) — match the location directly instead.
+  const agentId = useMatch("/agent/:agentId")?.params.agentId;
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -59,9 +62,13 @@ export default function Sidebar() {
 
   const handleDelete = useCallback(async (name: string) => {
     if (!confirm(`Delete agent "${name}" and clear its server-side state?`)) return;
+    // Leave the agent's workspace BEFORE destroying it: the still-mounted
+    // useAgent socket would auto-reconnect to the destroyed DO name and
+    // resurrect an empty ghost agent (idFromName instantiates on connect).
+    if (name === agentId) navigate("/");
     try { await removeAgent(name); await refreshAgents(); }
     catch (err) { alert(`Could not remove: ${(err as Error).message}`); }
-  }, [refreshAgents]);
+  }, [agentId, navigate, refreshAgents]);
 
   return (
     <aside className="hidden w-64 shrink-0 h-full flex-col p-elevated border-r p-border md:flex">
