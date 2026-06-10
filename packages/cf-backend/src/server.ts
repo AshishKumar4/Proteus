@@ -35,6 +35,8 @@ import {
 } from "./auth/session.js";
 import { withD1Bookmark as withD1BookmarkCookie } from "./auth/d1-store.js";
 import { parseCliAgentConnectTicketUserId } from "./user/user-do.js";
+import { claimOwnedAgent } from "./user/agent-access.js";
+import { err } from "./lib/http.js";
 
 /** Public webhook delivery endpoint match. `/api/agents/<name>/webhook/<id>` —
  *  the only `/api/agents/<name>/...` route that bypasses browser OAuth (it has
@@ -78,36 +80,16 @@ function authError(request: Request, e: AuthError): Response {
   });
 }
 
-/** Verify the caller owns the agent named in the URL. Returns 404 if the
- *  agent isn't in this user's registry; creation must go through the explicit
- *  user/CLI create APIs so websocket probes cannot register agents. */
+/** Verify the caller owns the agent named in the URL via the shared
+ *  registry-membership + claimOwner policy. Returns a denial response or
+ *  null when access is granted. */
 async function ensureAgentOwnership(
   env: Env,
   identity: AuthIdentity,
   agentName: string,
 ): Promise<Response | null> {
-  const userDO = env.UserDO.get(env.UserDO.idFromName(identity.userId));
-  if (!(await userDO.hasAgent(agentName))) {
-    return new Response(JSON.stringify({ error: `Agent ${agentName} not in your registry. Create it via POST /api/user/agents first.` }), {
-      status: 404, headers: { 'content-type': 'application/json' },
-    });
-  }
-  // Claim ownership on the orchestrator's own agent_identity. Idempotent;
-  // throws if the agent is already owned by a different user — translate
-  // to 403 for the caller, surfacing the real error so we can diagnose
-  // boot/schema issues rather than masking them as "name taken".
-  const orchestrator = env.OrchestratorAgent.get(env.OrchestratorAgent.idFromName(agentName));
-  try {
-    await orchestrator.claimOwner(identity.userId);
-  } catch (e) {
-    const msg = (e as Error).message ?? '';
-    const status = /owned by a different user/i.test(msg) ? 403 : 500;
-    console.error(`[server] claimOwner(${agentName}) failed:`, msg);
-    return new Response(JSON.stringify({ error: msg }), {
-      status, headers: { 'content-type': 'application/json' },
-    });
-  }
-  return null;
+  const result = await claimOwnedAgent(env, identity.userId, agentName);
+  return result.ok ? null : err(result.status, result.error);
 }
 
 function extractAgentName(pathname: string): string | null {

@@ -264,3 +264,33 @@ describe('CLI control routes', () => {
     expect(calls).toContain('triggers:webhook:{"label":"github","auth_mode":"hmac","secret":"secret"}');
   });
 });
+
+describe('shared ownership claim status mapping', () => {
+  function envWithClaimFailure(message: string) {
+    return {
+      UserDO: {
+        idFromName: (n: string) => n,
+        get: () => ({
+          async verifyCliToken(token: string) {
+            return { ok: token === TOKEN, tokenHash: 'hash', user: { id: USER_ID, email: 'a@example.com', displayName: null } };
+          },
+          async hasAgent() { return true; },
+        }),
+      },
+      OrchestratorAgent: {
+        idFromName: (n: string) => n,
+        get: () => ({ async claimOwner() { throw new Error(message); } }),
+      },
+    } as unknown as Env;
+  }
+
+  test('cross-user collision → 403', async () => {
+    const res = await handleCliRequest(cliRequest('/api/cli/agents/jarvis/status'), envWithClaimFailure('Agent owned by a different user (stored=aaaa…, caller=bbbb…)'));
+    expect(res?.status).toBe(403);
+  });
+
+  test('infra failure during claim → 500, not 403', async () => {
+    const res = await handleCliRequest(cliRequest('/api/cli/agents/jarvis/status'), envWithClaimFailure('SQLITE_ERROR: no such table: agent_identity'));
+    expect(res?.status).toBe(500);
+  });
+});

@@ -32,7 +32,7 @@ import type { AuthIdentity } from '../auth/session.js';
 import type { UserDO } from './user-do.js';
 import { buildCliAuthCommand, buildCliInstallCommand, buildCliSetupCommand, normalizeCliOrigin } from '../cli/install-command.js';
 import { listAvailableModels } from './available-models.js';
-import { createCloudAgentForUser } from './agent-create.js';
+import { handleCreateAgentRequest } from './agent-access.js';
 import { err, json, safeJson } from '../lib/http.js';
 
 function getUserDOStub(env: Env, userId: string): DurableObjectStub<UserDO> {
@@ -73,18 +73,7 @@ export async function handleUserRequest(
     return json(await stub.listAgents());
   }
   if (path === '/agents' && method === 'POST') {
-    const body = await safeJson<{ name?: string; displayName?: string; purpose?: string }>(request);
-    if (!body) return err(400, 'Body must be JSON');
-    if (!body.name?.trim() && !body.purpose?.trim()) return err(400, 'purpose required');
-    try {
-      const entry = await createCloudAgentForUser(env, identity.userId, stub, body, {
-        waitUntil: (promise) => ctx?.waitUntil(promise),
-      });
-      return json(entry, { status: 201 });
-    } catch (e) {
-      const message = (e as Error).message;
-      return err(message.startsWith('Cloudflare Workers AI is not connected') ? 409 : 400, message);
-    }
+    return handleCreateAgentRequest(request, env, identity.userId, stub, ctx);
   }
   const agentTouchMatch = path.match(/^\/agents\/([^/]+)\/touch$/);
   if (agentTouchMatch && method === 'POST') {

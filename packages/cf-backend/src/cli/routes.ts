@@ -8,7 +8,7 @@ import type { UserDO } from '../user/user-do.js';
 import { CliAuthCodeError, RateLimitError, approveCliAuth, inspectCliAuth, pollCliAuth, startCliAuth } from './auth-store.js';
 import { buildCliInstallCommand } from './install-command.js';
 import { listAvailableModels } from '../user/available-models.js';
-import { createCloudAgentForUser } from '../user/agent-create.js';
+import { claimOwnedAgent, handleCreateAgentRequest } from '../user/agent-access.js';
 
 interface CliIdentity {
   userId: string;
@@ -104,17 +104,7 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
   }
 
   if (path === '/agents' && method === 'POST') {
-    const body = await safeJson<{ name?: string; displayName?: string; purpose?: string }>(request);
-    if (!body?.name?.trim() && !body?.purpose?.trim()) return err(400, 'purpose required');
-    try {
-      const entry = await createCloudAgentForUser(env, cli.userId, cli.userDO, body, {
-        waitUntil: (promise) => ctx?.waitUntil(promise),
-      });
-      return json(entry, { status: 201 });
-    } catch (e) {
-      const message = (e as Error).message;
-      return err(message.startsWith('Cloudflare Workers AI is not connected') ? 409 : 400, message);
-    }
+    return handleCreateAgentRequest(request, env, cli.userId, cli.userDO, ctx);
   }
 
   const connectTicketMatch = path.match(/^\/agents\/([^/]+)\/connect-ticket$/);
@@ -367,14 +357,9 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
 }
 
 async function cliAgent(env: Env, cli: CliIdentity, name: string): Promise<DurableObjectStub<OrchestratorAgent> | Response> {
-  if (!(await cli.userDO.hasAgent(name))) return err(404, `Agent ${name} not found.`);
-  const agent = env.OrchestratorAgent.get(env.OrchestratorAgent.idFromName(name));
-  try {
-    await agent.claimOwner(cli.userId);
-    return agent;
-  } catch (e) {
-    return err(403, (e as Error).message);
-  }
+  const result = await claimOwnedAgent(env, cli.userId, name);
+  if (!result.ok) return err(result.status, result.error);
+  return result.agent;
 }
 
 function readIntParam(url: URL, key: string): number | undefined {
