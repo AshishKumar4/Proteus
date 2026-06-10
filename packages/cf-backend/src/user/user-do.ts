@@ -14,6 +14,7 @@
  * Token refresh (Codex OAuth) happens atomically inside this DO.
  */
 import { Agent, callable } from "agents";
+import { parseCliTokenUserId } from "../cli/auth-store.js";
 import { MCPClientManager } from "agents/mcp/client";
 import {
   DurableObjectOAuthClientProvider,
@@ -131,11 +132,6 @@ async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function parseCliTokenUserId(token: string): string | null {
-  const match = /^ptc_([a-f0-9]{32})_[A-Za-z0-9_-]{24,}$/.exec(token);
-  return match?.[1] ?? null;
 }
 
 export function parseCliAgentConnectTicketUserId(ticket: string): string | null {
