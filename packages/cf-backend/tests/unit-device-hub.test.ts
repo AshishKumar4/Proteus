@@ -99,17 +99,34 @@ describe('DeviceSocketHub', () => {
     expect(await reply).toBe('hi');
   });
 
-  test('dropTunnel rejects in-flight calls; liveness follows the socket', async () => {
+  test('a socket close rejects its in-flight calls; liveness follows the socket', async () => {
     const ctx = fakeCtx();
     const hub = new DeviceSocketHub(ctx);
     const ws = fakeSocket();
     hub.accept('dev-a', ws);
     const pending = hub.tunnel('dev-a')!.rpc('exec', ['sleep 99']);
-    hub.dropTunnel('dev-a');
-    await expect(pending).rejects.toThrow('device tunnel not connected');
     ws.readyState = 3;
+    hub.handleClose('dev-a', ws);
+    await expect(pending).rejects.toThrow('device tunnel not connected');
     expect(hub.isConnected('dev-a')).toBe(false);
     expect(hub.connectedDeviceId()).toBeNull();
+  });
+
+  test('a replaced socket\'s late close event does not tear down the new tunnel', async () => {
+    const ctx = fakeCtx();
+    const hub = new DeviceSocketHub(ctx);
+    const first = fakeSocket();
+    const second = fakeSocket();
+    hub.accept('dev-a', first);
+    hub.accept('dev-a', second); // closes `first`; its close event arrives later
+    const pending = hub.tunnel('dev-a')!.rpc('exec', ['ls']);
+
+    hub.handleClose('dev-a', first); // the late close for the replaced socket
+
+    const frame = JSON.parse(second.sent[0]!) as { id: string };
+    hub.handleMessage('dev-a', JSON.stringify({ id: frame.id, result: 'ok' }));
+    expect(await pending).toBe('ok');
+    expect(hub.isConnected('dev-a')).toBe(true);
   });
 
   test('close (revocation) closes every socket for the device', () => {

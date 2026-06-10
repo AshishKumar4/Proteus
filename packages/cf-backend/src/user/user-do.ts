@@ -555,7 +555,7 @@ export class UserDO extends Agent<Env> {
     const deviceId = deviceIdFromSocket(ws);
     if (!deviceId) return super.webSocketClose(ws, code, reason, wasClean);
     this.ensureInit();
-    this._devices.dropTunnel(deviceId);
+    this._devices.handleClose(deviceId, ws);
     // A replacing socket may already be live — only then keep connected_at.
     if (!this._devices.isConnected(deviceId)) {
       try { this.sqlx(`UPDATE user_devices SET connected_at = NULL WHERE id = ?`, deviceId); } catch { /* nop */ }

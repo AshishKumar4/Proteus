@@ -43,8 +43,13 @@ export function deviceIdFromSocket(ws: DeviceSocket): string | null {
   }
 }
 
+interface TunnelEntry {
+  tunnel: DeviceTunnel;
+  ws: DeviceSocket;
+}
+
 export class DeviceSocketHub {
-  private readonly tunnels = new Map<string, DeviceTunnel>();
+  private readonly tunnels = new Map<string, TunnelEntry>();
 
   constructor(private readonly ctx: DeviceSocketCtx) {}
 
@@ -84,11 +89,11 @@ export class DeviceSocketHub {
    *  socket when this DO instance woke after the socket was accepted. */
   tunnel(deviceId: string): DeviceTunnel | null {
     const cached = this.tunnels.get(deviceId);
-    if (cached?.isConnected()) return cached;
+    if (cached?.tunnel.isConnected()) return cached.tunnel;
     const ws = this.liveSocket(deviceId);
     if (!ws) return null;
     const tunnel = new DeviceTunnel(ws);
-    this.tunnels.set(deviceId, tunnel);
+    this.tunnels.set(deviceId, { tunnel, ws });
     return tunnel;
   }
 
@@ -97,9 +102,19 @@ export class DeviceSocketHub {
     this.tunnel(deviceId)?.handleMessage(data);
   }
 
-  /** Forget the device's tunnel (socket closed); in-flight calls reject. */
-  dropTunnel(deviceId: string): void {
-    this.tunnels.get(deviceId)?.dispose();
+  /** A device socket closed. Rejects its tunnel's in-flight calls — but only
+   *  when the closing socket is the tunnel's own (a replaced socket's close
+   *  event arrives AFTER its replacement was accepted and must not tear down
+   *  the new tunnel). */
+  handleClose(deviceId: string, ws: DeviceSocket): void {
+    const cached = this.tunnels.get(deviceId);
+    if (!cached || cached.ws !== ws) return;
+    this.dropTunnel(deviceId);
+  }
+
+  /** Forget the device's tunnel; in-flight calls reject. */
+  private dropTunnel(deviceId: string): void {
+    this.tunnels.get(deviceId)?.tunnel.dispose();
     this.tunnels.delete(deviceId);
   }
 
