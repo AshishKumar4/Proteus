@@ -88,22 +88,26 @@ export default function Sidebar() {
         )}
         <ul className="space-y-0.5">
           {agents.map((a) => (
-            <li key={a.name}>
+            // Link and delete button are siblings (a button inside an anchor is
+            // invalid HTML and breaks keyboard/AT semantics); the button overlays
+            // the row's right edge and is reachable by keyboard via focus-visible.
+            <li key={a.name} className="group relative">
               <NavLink
                 to={`/agent/${a.name}`}
                 className={({ isActive }) =>
-                  `flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm group ${
+                  `flex items-center gap-2 pl-2 pr-7 py-1.5 rounded-md text-sm ${
                     isActive ? 'p-card font-medium' : 'hover:p-card-hover p-text'
                   }`
                 }
               >
                 <span className="truncate">{a.displayName || a.name}</span>
-                <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(a.name); }}
-                  className="opacity-0 group-hover:opacity-60 hover:!opacity-100 p-text-3 hover:p-danger transition-all p-1"
-                  title="Remove"
-                ><TrashIcon size={12} /></button>
               </NavLink>
+              <button
+                onClick={() => handleDelete(a.name)}
+                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-60 focus-visible:opacity-100 hover:!opacity-100 p-text-3 hover:p-danger transition-all p-1"
+                title="Remove"
+                aria-label={`Remove agent ${a.displayName || a.name}`}
+              ><TrashIcon size={12} /></button>
             </li>
           ))}
         </ul>
