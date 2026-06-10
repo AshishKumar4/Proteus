@@ -1,5 +1,6 @@
 import type { AuthIdentity } from '../auth/session.js';
 import type { UserDO } from '../user/user-do.js';
+import { randomToken, sha256Hex } from '../lib/crypto.js';
 
 const AUTH_TTL_MS = 10 * 60 * 1000;
 const CLEANUP_RETENTION_MS = 10 * 60 * 1000;
@@ -280,15 +281,3 @@ function createUserCode(): string {
   return `${out.slice(0, 4)}-${out.slice(4)}`;
 }
 
-function randomToken(bytes: number): string {
-  const data = crypto.getRandomValues(new Uint8Array(bytes));
-  let bin = '';
-  for (const b of data) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}

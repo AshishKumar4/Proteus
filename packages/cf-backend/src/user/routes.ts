@@ -33,17 +33,7 @@ import type { UserDO } from './user-do.js';
 import { buildCliAuthCommand, buildCliInstallCommand, buildCliSetupCommand, normalizeCliOrigin } from '../cli/install-command.js';
 import { listAvailableModels } from './available-models.js';
 import { createCloudAgentForUser } from './agent-create.js';
-
-function json(body: unknown, init: ResponseInit = {}): Response {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: { 'content-type': 'application/json', ...(init.headers as Record<string, string> | undefined) },
-  });
-}
-
-function err(status: number, message: string): Response {
-  return json({ error: message }, { status });
-}
+import { err, json, safeJson } from '../lib/http.js';
 
 function getUserDOStub(env: Env, userId: string): DurableObjectStub<UserDO> {
   return env.UserDO.get(env.UserDO.idFromName(userId)) as DurableObjectStub<UserDO>;
@@ -243,8 +233,4 @@ function publicOrigin(request: Request): string {
   // the request URL itself because Workers preserves the visitor's scheme
   // and host in `request.url` for proxied requests.
   return new URL(request.url).origin;
-}
-
-async function safeJson<T = unknown>(request: Request): Promise<T | null> {
-  try { return (await request.json()) as T; } catch { return null; }
 }

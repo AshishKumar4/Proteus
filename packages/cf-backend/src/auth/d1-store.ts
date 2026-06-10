@@ -1,6 +1,7 @@
 import type { AuthIdentity } from './session.js';
 import type { OAuthProviderId } from './providers.js';
 import type { UserDO } from '../user/user-do.js';
+import { randomHex, randomToken, sha256Hex } from '../lib/crypto.js';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -233,6 +234,15 @@ export function clearD1BookmarkCookie(): string {
   return `${D1_BOOKMARK_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 }
 
+/** Attach the D1 session bookmark cookie to a response (no-op without one). */
+export function withD1Bookmark(response: Response, bookmark: string | null | undefined): Response {
+  const cookie = d1BookmarkCookie(bookmark ?? null);
+  if (!cookie) return response;
+  const headers = new Headers(response.headers);
+  headers.append('set-cookie', cookie);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 async function resolveOrCreateIdentity(
   env: AuthStoreEnv,
   session: D1DatabaseSession,
@@ -348,25 +358,12 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function sanitizeReturnTo(input: string): string {
+/** Single source of truth for post-login redirect sanitization: relative
+ *  paths only, no protocol-relative or backslash tricks, and never back
+ *  into the auth flow itself. */
+export function sanitizeReturnTo(input: string): string {
   const raw = input.trim();
   if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return '/';
+  if (raw.startsWith('/auth/') || raw === '/login' || raw === '/logout') return '/';
   return raw;
-}
-
-function randomToken(bytes: number): string {
-  const data = crypto.getRandomValues(new Uint8Array(bytes));
-  let bin = '';
-  for (const b of data) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function randomHex(bytes: number): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
 }

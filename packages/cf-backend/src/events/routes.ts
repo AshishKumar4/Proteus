@@ -22,19 +22,9 @@ import { getAgentByName } from 'agents';
 import type { OrchestratorAgent } from '../orchestrator.js';
 import { readWebhookBodyText } from './body.js';
 import { normalizeWebhookRateLimitPerMin } from './webhook-rate-limit.js';
+import { err, json, safeJson } from '../lib/http.js';
 
 const STEP_UP_WINDOW_MS = 5 * 60 * 1000;   // 5-min window for sensitive ops
-
-function json(body: unknown, init: ResponseInit = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status: init.status ?? 200,
-    headers: { 'content-type': 'application/json', ...(init.headers as Record<string, string> | undefined) },
-  });
-}
-
-function err(status: number, message: string): Response {
-  return json({ error: message }, { status });
-}
 
 function requestAuthTimeMs(request: Request): number | null {
   const forwarded = Number(request.headers.get('x-proteus-auth-time') ?? '');
@@ -204,8 +194,4 @@ function extractHeaders(request: Request): Record<string, string> {
   const out: Record<string, string> = {};
   request.headers.forEach((value, key) => { out[key] = value; });
   return out;
-}
-
-async function safeJson<T = unknown>(request: Request): Promise<T | null> {
-  try { return (await request.json()) as T; } catch { return null; }
 }

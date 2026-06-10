@@ -1,6 +1,8 @@
 import type { AuthIdentity } from '../auth/session.js';
 import { AuthError, authenticateRequest } from '../auth/session.js';
 import { publicHtmlHeaders } from '../lib/security-headers.js';
+import { err, escapeHtml, json, safeJson } from '../lib/http.js';
+import { randomToken, timingSafeEqual } from '../lib/crypto.js';
 import type { OrchestratorAgent } from '../orchestrator.js';
 import type { UserDO } from '../user/user-do.js';
 import { approveCliAuth, inspectCliAuth, pollCliAuth, startCliAuth } from './auth-store.js';
@@ -482,7 +484,7 @@ async function approveFromBrowser(request: Request, env: Env): Promise<Response>
   const code = String(form.get('userCode') ?? '');
   const csrf = String(form.get('csrf') ?? '');
   const cookieCsrf = readCookie(request, 'proteus_cli_auth_csrf');
-  if (!csrf || !cookieCsrf || !constantTimeEqual(csrf, cookieCsrf)) {
+  if (!csrf || !cookieCsrf || !timingSafeEqual(csrf, cookieCsrf)) {
     return html('Proteus CLI Auth', '<p>Invalid or expired approval session. Refresh the approval page and try again.</p>', 403);
   }
   if (!code) return html('Proteus CLI Auth', '<p>Missing CLI auth code.</p>', 400);
@@ -1028,17 +1030,6 @@ exec bun run packages/cli/bin/cli.ts "$@"
   });
 }
 
-function json(body: unknown, init: ResponseInit = {}): Response {
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers: { 'content-type': 'application/json', ...(init.headers as Record<string, string> | undefined) },
-  });
-}
-
-function err(status: number, message: string): Response {
-  return json({ error: message }, { status });
-}
-
 function accessError(e: unknown, request?: Request): Response {
   if (e instanceof AuthError) {
     if (e.status === 401 && request?.method === 'GET') {
@@ -1099,19 +1090,6 @@ function html(title: string, body: string, status = 200, init: ResponseInit = {}
   });
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-async function safeJson<T = unknown>(request: Request): Promise<T | null> {
-  try { return (await request.json()) as T; } catch { return null; }
-}
-
 function csrfCookie(value: string): string {
   return `proteus_cli_auth_csrf=${value}; Path=/cli/auth; Max-Age=600; HttpOnly; Secure; SameSite=Strict`;
 }
@@ -1137,16 +1115,3 @@ function isSameOriginPost(request: Request): boolean {
   return !referer || referer.startsWith(`${url.origin}/`);
 }
 
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-function randomToken(bytes: number): string {
-  const data = crypto.getRandomValues(new Uint8Array(bytes));
-  let bin = '';
-  for (const b of data) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}

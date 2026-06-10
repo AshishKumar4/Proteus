@@ -33,7 +33,7 @@ import {
   authenticateRequest, AuthError, isPublicPath,
   type AuthIdentity,
 } from "./auth/session.js";
-import { d1BookmarkCookie } from "./auth/d1-store.js";
+import { withD1Bookmark as withD1BookmarkCookie } from "./auth/d1-store.js";
 import { parseCliAgentConnectTicketUserId } from "./user/user-do.js";
 
 /** Public webhook delivery endpoint match. `/api/agents/<name>/webhook/<id>` —
@@ -297,9 +297,5 @@ function wantsHtml(request: Request): boolean {
 
 function withD1Bookmark(response: Response, identity: AuthIdentity): Response {
   if (response.status === 101) return response;
-  const cookie = d1BookmarkCookie(identity.d1Bookmark ?? null);
-  if (!cookie) return response;
-  const headers = new Headers(response.headers);
-  headers.append('set-cookie', cookie);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  return withD1BookmarkCookie(response, identity.d1Bookmark);
 }

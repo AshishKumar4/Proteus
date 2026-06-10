@@ -1,10 +1,11 @@
 import * as oauth from 'oauth4webapi';
-import { AuthError, authenticateRequest, readSessionToken } from './session.js';
+import { AuthError, SESSION_COOKIE_NAME, authenticateRequest, readSessionToken } from './session.js';
 import {
   cleanupExpiredAuthRows, clearD1BookmarkCookie, consumeOAuthState, createOAuthState,
-  createSession, d1BookmarkCookie, revokeSession,
+  createSession, d1BookmarkCookie, revokeSession, sanitizeReturnTo, withD1Bookmark,
   type OAuthProfile,
 } from './d1-store.js';
+import { escapeHtml, json } from '../lib/http.js';
 import {
   clientAuth, getAuthorizationServer, getOAuthProvider, listConfiguredOAuthProviders,
   type OAuthProviderConfig, type OAuthProviderId,
@@ -14,8 +15,6 @@ import {
   cloudflareTokenToCredential,
 } from '../lib/cloudflare-oauth.js';
 import { DEFAULT_WORKERS_AI_MODEL_SPEC } from '../providers/workers-ai-catalog.js';
-
-const SESSION_COOKIE_NAME = '__Host-proteus_session';
 
 export async function handleAuthRequest(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response | null> {
   const url = new URL(request.url);
@@ -426,13 +425,6 @@ function clearSessionCookie(): string {
   return `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 }
 
-function sanitizeReturnTo(input: string): string {
-  const raw = input.trim();
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return '/';
-  if (raw.startsWith('/auth/') || raw === '/login' || raw === '/logout') return '/';
-  return raw;
-}
-
 function stringClaim(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
@@ -528,15 +520,6 @@ function redirect(location: string, init: ResponseInit = {}): Response {
   return new Response(null, {
     ...init,
     status: init.status ?? 302,
-    headers,
-  });
-}
-
-function json(body: unknown, init: ResponseInit = {}): Response {
-  const headers = new Headers(init.headers);
-  headers.set('content-type', 'application/json');
-  return new Response(JSON.stringify(body), {
-    ...init,
     headers,
   });
 }
@@ -658,19 +641,3 @@ function html(title: string, body: string, init: ResponseInit = {}): Response {
   });
 }
 
-function withD1Bookmark(response: Response, bookmark?: string | null): Response {
-  const cookie = d1BookmarkCookie(bookmark ?? null);
-  if (!cookie) return response;
-  const headers = new Headers(response.headers);
-  headers.append('set-cookie', cookie);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}

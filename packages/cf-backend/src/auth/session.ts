@@ -7,8 +7,9 @@
 // from that email. Production must leave that variable unset.
 
 import { readD1Bookmark, verifySession } from './d1-store.js';
+import { sha256Hex } from '../lib/crypto.js';
 
-const SESSION_COOKIE_NAME = '__Host-proteus_session';
+export const SESSION_COOKIE_NAME = '__Host-proteus_session';
 
 export interface AuthIdentity {
   /** Stable Proteus user id. */
@@ -30,15 +31,6 @@ export class AuthError extends Error {
     super(message);
     this.name = 'AuthError';
   }
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
-  const view = new Uint8Array(hash);
-  let out = '';
-  for (let i = 0; i < view.length; i++) out += view[i].toString(16).padStart(2, '0');
-  return out;
 }
 
 /** Deterministic dev user id: sha256(email) truncated to 32 hex chars. */
