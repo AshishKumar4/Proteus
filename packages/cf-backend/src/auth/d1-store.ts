@@ -260,6 +260,8 @@ async function resolveOrCreateIdentity(
         AND provider_account_id = ?`,
   ).bind(profile.provider, profile.providerSub).first<AccountRow>();
 
+  // Resolve the final userId BEFORE creating any rows: provider account
+  // first, then the verified-email link, then mint a fresh id.
   let userId = existing?.user_id ?? null;
   if (!userId && profile.emailVerified) {
     const linked = await session.prepare(
@@ -267,8 +269,10 @@ async function resolveOrCreateIdentity(
     ).bind(email).first<{ user_id: string }>();
     userId = linked?.user_id ?? null;
   }
+  const minted = !userId;
   if (!userId) userId = randomHex(16);
 
+  // Exactly one auth_users upsert per login on the normal path.
   await upsertUser(session, userId, email, profile, now);
 
   if (!existing && profile.emailVerified) {
@@ -278,10 +282,18 @@ async function resolveOrCreateIdentity(
        ON CONFLICT(email) DO UPDATE SET updated_at = excluded.updated_at
        RETURNING user_id`,
     ).bind(email, userId, now, now).first<{ user_id: string }>();
-    userId = linked?.user_id ?? userId;
+    const linkedId = linked?.user_id ?? userId;
+    if (linkedId !== userId) {
+      // Lost a concurrent first-login race for this email: adopt the winner
+      // and delete the provisional auth_users row we just inserted (nothing
+      // references it yet) so it cannot leak as an orphan.
+      if (minted) {
+        await session.prepare(`DELETE FROM auth_users WHERE id = ?`).bind(userId).run();
+      }
+      userId = linkedId;
+      await upsertUser(session, userId, email, profile, now);
+    }
   }
-
-  await upsertUser(session, userId, email, profile, now);
 
   const account = await session.prepare(
     `INSERT INTO auth_accounts
@@ -306,8 +318,9 @@ async function resolveOrCreateIdentity(
     now,
   ).first<AccountRow>();
 
+  // A pre-existing account row wins (its user row exists by FK); this can
+  // only differ from our resolution under a concurrent same-account login.
   userId = account?.user_id ?? userId;
-  await upsertUser(session, userId, email, profile, now);
 
   const userDO = env.UserDO.get(env.UserDO.idFromName(userId)) as DurableObjectStub<UserDO>;
   await userDO.ensureProfile(email, profile.displayName ?? undefined);
