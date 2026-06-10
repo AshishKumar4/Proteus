@@ -1,3 +1,4 @@
+import { CHAT_MESSAGE_TYPES } from 'agents/chat';
 import { createCloudAgentConnectTicket } from './cloud-api.js';
 import {
   asRecord,
@@ -6,16 +7,7 @@ import {
   type AgentClientEvent,
   type AgentClientSendOptions,
   type AgentTurnResult,
-  type AgentUiMessage,
 } from './agent-client.js';
-
-const CHAT_MESSAGES = 'cf_agent_chat_messages';
-const CHAT_REQUEST = 'cf_agent_use_chat_request';
-const CHAT_RESPONSE = 'cf_agent_use_chat_response';
-const CHAT_CANCEL = 'cf_agent_chat_request_cancel';
-const STREAM_RESUMING = 'cf_agent_stream_resuming';
-const STREAM_RESUME_ACK = 'cf_agent_stream_resume_ack';
-const STREAM_RESUME_REQUEST = 'cf_agent_stream_resume_request';
 
 interface ActiveTurn {
   text: string;
@@ -27,12 +19,17 @@ interface ActiveTurn {
   reject: (err: Error) => void;
 }
 
+/**
+ * Thin protocol client for the OrchestratorAgent DO chat websocket.
+ *
+ * The DO is the source of truth for chat history and turn execution: each send
+ * transmits only the new user message (the server reconciles it into its
+ * canonical store and builds model context server-side), so the client never
+ * mirrors history. History reads go over the HTTP projection in cloud-api.
+ */
 export class CloudAgentClient implements AgentClient {
   private ws: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
-  private messages: AgentUiMessage[] = [];
-  private sawInitialMessages = false;
-  private initialMessageWaiters: Array<() => void> = [];
   private readonly activeTurns = new Map<string, ActiveTurn>();
 
   constructor(private readonly opts: { origin: string; token: string; name: string }) {}
@@ -41,15 +38,10 @@ export class CloudAgentClient implements AgentClient {
     const text = prompt.trim();
     if (!text) throw new Error('prompt required');
     await this.ensureOpen();
-    await this.waitForInitialMessages();
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error('Cloud agent connection is not open.');
 
     const requestId = randomRequestId();
-    const userMessage = createUserUiMessage(text);
-    const outgoingMessages = [...this.messages, userMessage];
-    this.messages = outgoingMessages;
-
     return await new Promise<AgentTurnResult>((resolve, reject) => {
       this.activeTurns.set(requestId, {
         text: '',
@@ -67,12 +59,12 @@ export class CloudAgentClient implements AgentClient {
           init: {
             method: 'POST',
             body: JSON.stringify({
-              messages: outgoingMessages,
+              messages: [createUserUiMessage(text)],
               trigger: 'submit-message',
               ...(opts.cwd ? { cwd: opts.cwd } : {}),
             }),
           },
-          type: CHAT_REQUEST,
+          type: CHAT_MESSAGE_TYPES.USE_CHAT_REQUEST,
         }));
       } catch (err) {
         this.activeTurns.delete(requestId);
@@ -81,11 +73,16 @@ export class CloudAgentClient implements AgentClient {
     });
   }
 
+  /** Cancel in-flight turns: ask the DO to abort, resolve locally with the
+   *  partial output so callers return to idle immediately. */
   stop(): void {
     const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    for (const id of this.activeTurns.keys()) {
-      ws.send(JSON.stringify({ type: CHAT_CANCEL, id }));
+    for (const [id, turn] of [...this.activeTurns]) {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: CHAT_MESSAGE_TYPES.CHAT_REQUEST_CANCEL, id }));
+      }
+      this.activeTurns.delete(id);
+      turn.resolve({ text: turn.text, toolCalls: turn.toolCalls, steps: turn.steps });
     }
   }
 
@@ -94,7 +91,6 @@ export class CloudAgentClient implements AgentClient {
     this.ws?.close();
     this.ws = null;
     this.connectPromise = null;
-    this.sawInitialMessages = false;
   }
 
   private async ensureOpen(): Promise<void> {
@@ -114,15 +110,11 @@ export class CloudAgentClient implements AgentClient {
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('ticket', ticket);
 
-    this.sawInitialMessages = false;
     const ws = new WebSocket(url.toString());
     this.ws = ws;
     ws.addEventListener('message', (event) => this.handleMessage(event));
     ws.addEventListener('close', () => {
-      if (this.ws === ws) {
-        this.ws = null;
-        this.sawInitialMessages = false;
-      }
+      if (this.ws === ws) this.ws = null;
       this.rejectActive(new Error('Cloud agent connection closed.'));
     });
     ws.addEventListener('error', () => {
@@ -133,7 +125,6 @@ export class CloudAgentClient implements AgentClient {
       const timeout = setTimeout(() => reject(new Error('Timed out connecting to cloud agent.')), 15_000);
       ws.addEventListener('open', () => {
         clearTimeout(timeout);
-        ws.send(JSON.stringify({ type: STREAM_RESUME_REQUEST }));
         resolve();
       }, { once: true });
       ws.addEventListener('error', () => {
@@ -143,41 +134,20 @@ export class CloudAgentClient implements AgentClient {
     });
   }
 
-  private async waitForInitialMessages(): Promise<void> {
-    if (this.sawInitialMessages) return;
-    await new Promise<void>((resolve) => {
-      let timeout: ReturnType<typeof setTimeout>;
-      const waiter = () => {
-        clearTimeout(timeout);
-        resolve();
-      };
-      timeout = setTimeout(() => {
-        this.initialMessageWaiters = this.initialMessageWaiters.filter((item) => item !== waiter);
-        this.sawInitialMessages = true;
-        resolve();
-      }, 1_500);
-      this.initialMessageWaiters.push(waiter);
-    });
-  }
-
   private handleMessage(event: MessageEvent): void {
     const payload = parseSocketJson(event.data);
     if (!payload) return;
 
-    if (payload.type === CHAT_MESSAGES && Array.isArray(payload.messages)) {
-      this.messages = payload.messages.filter(isUiMessage);
-      this.sawInitialMessages = true;
-      const waiters = this.initialMessageWaiters.splice(0);
-      for (const waiter of waiters) waiter();
+    // Ack a resuming stream only when it is one of our own turns, so the DO
+    // replays its chunks after a reconnect; other clients' streams are ignored.
+    if (payload.type === CHAT_MESSAGE_TYPES.STREAM_RESUMING && typeof payload.id === 'string') {
+      if (this.activeTurns.has(payload.id)) {
+        this.ws?.send(JSON.stringify({ type: CHAT_MESSAGE_TYPES.STREAM_RESUME_ACK, id: payload.id }));
+      }
       return;
     }
 
-    if (payload.type === STREAM_RESUMING && typeof payload.id === 'string') {
-      this.ws?.send(JSON.stringify({ type: STREAM_RESUME_ACK, id: payload.id }));
-      return;
-    }
-
-    if (payload.type !== CHAT_RESPONSE || typeof payload.id !== 'string') return;
+    if (payload.type !== CHAT_MESSAGE_TYPES.USE_CHAT_RESPONSE || typeof payload.id !== 'string') return;
     const active = this.activeTurns.get(payload.id);
     if (!active) return;
     if (payload.error) {
@@ -255,13 +225,6 @@ function parseSocketJson(data: unknown): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-function isUiMessage(value: unknown): value is AgentUiMessage {
-  return isRecord(value)
-    && typeof value.id === 'string'
-    && (value.role === 'system' || value.role === 'user' || value.role === 'assistant')
-    && Array.isArray(value.parts);
 }
 
 function stringifyToolOutput(output: unknown): string {
