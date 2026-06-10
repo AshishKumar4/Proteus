@@ -15,6 +15,7 @@ export { createAgent, wrapDatabase, type AgentBirthConfig, type AgentDatabase } 
 export { openAgent, type AgentResumeConfig, type AgentInfo } from './identity/open.js';
 export { forkAgentStorage, readForkLineage, type ForkOpts, type ForkResult, type ForkLineageRow } from './identity/fork.js';
 export {
+  AGENT_IDENTITY_SYSTEM_PROMPT,
   agentIdentityPrompt,
   createAgentNameFromMission,
   deriveAgentTitle,

@@ -1,5 +1,6 @@
 import { generateText } from 'ai';
 import {
+  AGENT_IDENTITY_SYSTEM_PROMPT,
   DEFAULT_WORKERS_AI_MODEL_SPEC,
   agentIdentityPrompt,
   createAgentNameFromMission,
@@ -126,7 +127,7 @@ async function suggestCloudAgentDisplayName(
   const provider = createAgentProviderRegistry({ env, userDOStub: userDO, fetch });
   const result = await generateText({
     model: provider.resolveModel(modelSpec),
-    system: 'You create short, useful names for persistent software agents.',
+    system: AGENT_IDENTITY_SYSTEM_PROMPT,
     prompt: agentIdentityPrompt(mission),
     maxOutputTokens: 80,
   });
