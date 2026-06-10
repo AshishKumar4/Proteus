@@ -294,7 +294,7 @@ export async function handleMcpRequest(request: Request, env: Env): Promise<Resp
 
   // /mcp/v1/<agentName>[/...] — agentName is the second segment after /mcp/v1/
   const segments = url.pathname.replace(/^\/mcp\/v1\//, "").split("/").filter(Boolean);
-  const agentName = segments[0];
+  const agentName = segments[0] ? decodeURIComponent(segments[0]) : '';
   if (!agentName) {
     return withCors(Response.json(
       { error: "missing agent name in MCP path; use /mcp/v1/<agentName>" },
@@ -304,7 +304,7 @@ export async function handleMcpRequest(request: Request, env: Env): Promise<Resp
 
   const caller = await authenticateMcpCaller(request, env);
   if (caller instanceof Response) return caller;
-  const owned = await claimOwnedAgent(env, caller.userId, decodeURIComponent(agentName));
+  const owned = await claimOwnedAgent(env, caller.userId, agentName);
   if (!owned.ok) {
     return withCors(Response.json({ error: owned.error }, { status: owned.status }));
   }
