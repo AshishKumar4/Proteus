@@ -254,8 +254,11 @@ export class UserDO extends Agent<Env> {
     }));
   }
 
+  /** Insert-or-resurrect a roster row. `existed` reports whether ANY row
+   *  (archived included — a name conflict un-archives) was already there, so
+   *  a failed create can roll back ONLY rows it actually inserted. */
   @callable()
-  async registerAgent(name: string, displayName?: string, purpose?: string): Promise<AgentEntry> {
+  async registerAgent(name: string, displayName?: string, purpose?: string): Promise<{ entry: AgentEntry; existed: boolean }> {
     validateAgentName(name);
     const now = Date.now();
     const existing = this.sqlx<{ display_name: string }>(
@@ -273,7 +276,10 @@ export class UserDO extends Agent<Env> {
          archived_at  = NULL`,
       name, title, now, now,
     );
-    return { name, displayName: title, createdAt: now, lastVisited: now, archivedAt: null };
+    return {
+      entry: { name, displayName: title, createdAt: now, lastVisited: now, archivedAt: null },
+      existed: !!existing,
+    };
   }
 
   @callable()
