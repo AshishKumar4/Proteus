@@ -175,6 +175,16 @@ for attempt in 1 2 3 4 5 6; do
 done
 if [ "$CLI_ARCHIVE_OK" = "1" ]; then
   echo -e "${GREEN}✅ Proteus CLI source archive is downloadable${NC}"
+  # The CLI shim verifies this checksum by default — a stale/missing .sha256
+  # bricks installs and updates, so the deploy gate checks it too.
+  PUBLISHED_SHA="$(curl -fsSL --max-time 15 "${PROTEUS_URL}downloads/proteus-source.tar.gz.sha256" 2>/dev/null | awk '{print $1}')"
+  ACTUAL_SHA="$(sha256sum "$CLI_ARCHIVE_TMP" | awk '{print $1}')"
+  if [ -n "$PUBLISHED_SHA" ] && [ "$PUBLISHED_SHA" = "$ACTUAL_SHA" ]; then
+    echo -e "${GREEN}✅ Proteus CLI source checksum matches the published .sha256${NC}"
+  else
+    echo -e "${RED}❌ Published source checksum is missing or does not match the archive${NC}"
+    SMOKE_FAIL=1
+  fi
 else
   echo -e "${RED}❌ Proteus CLI source archive is missing or invalid${NC}"
   SMOKE_FAIL=1

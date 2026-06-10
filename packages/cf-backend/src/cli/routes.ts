@@ -927,6 +927,8 @@ PROTEUS_HOME="\${PROTEUS_HOME:-$HOME/.proteus}"
 SOURCE_ROOT="$PROTEUS_HOME/source"
 SRC_DIR="$SOURCE_ROOT/current"
 TARBALL_URL="\${PROTEUS_SOURCE_TARBALL:-${origin}${CLI_SOURCE_TARBALL_PATH}}"
+# Pinned checksum override; when unset, the published <tarball>.sha256 asset
+# is fetched and verification is mandatory.
 TARBALL_SHA256="\${PROTEUS_SOURCE_SHA256:-}"
 
 need_bun() {
@@ -943,15 +945,20 @@ die() {
 
 verify_tarball() {
   file="$1"
-  [ -n "$TARBALL_SHA256" ] || return 0
+  expected="$TARBALL_SHA256"
+  if [ -z "$expected" ]; then
+    expected="$(curl -fsSL "$TARBALL_URL.sha256" | awk '{print $1}')" \
+      || die "Could not download the source checksum from $TARBALL_URL.sha256."
+  fi
+  [ -n "$expected" ] || die "Source checksum is empty."
   if command -v sha256sum >/dev/null 2>&1; then
     actual="$(sha256sum "$file" | awk '{print $1}')"
   elif command -v shasum >/dev/null 2>&1; then
     actual="$(shasum -a 256 "$file" | awk '{print $1}')"
   else
-    die "PROTEUS_SOURCE_SHA256 is set but no sha256sum or shasum command was found."
+    die "sha256sum or shasum is required to verify the Proteus source download."
   fi
-  [ "$actual" = "$TARBALL_SHA256" ] || die "Source checksum mismatch."
+  [ "$actual" = "$expected" ] || die "Source checksum mismatch."
 }
 
 refresh_source() {
