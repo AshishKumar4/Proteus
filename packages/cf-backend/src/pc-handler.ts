@@ -89,10 +89,7 @@ async function handlePcConnectTicket(request: Request, env: Env): Promise<Respon
 
   const ns = env.UserDO;
   if (!ns) return json({ error: "No UserDO binding" }, { status: 500 });
-  const stub = ns.get(ns.idFromName(body.user)) as unknown as {
-    issueDeviceConnectTicket(token: string): Promise<{ ok: boolean; ticket?: string; expiresAt?: number }>;
-  };
-  const issued = await stub.issueDeviceConnectTicket(body.token);
+  const issued = await ns.get(ns.idFromName(body.user)).issueDeviceConnectTicket(body.token);
   if (!issued.ok || !issued.ticket || !issued.expiresAt) return json({ error: "unauthorized" }, { status: 401 });
   return json({ ticket: issued.ticket, expiresAt: issued.expiresAt });
 }
@@ -111,22 +108,10 @@ async function handlePcConnect(request: Request, env: Env): Promise<Response> {
 
   const ns = env.UserDO;
   if (!ns) return new Response("No UserDO binding", { status: 500 });
-  const stub = ns.get(ns.idFromName(userId)) as unknown as {
-    verifyDeviceConnectTicket(ticket: string): Promise<{ ok: boolean; deviceId?: string }>;
-    attachDeviceSocket(deviceId: string, ws: WebSocket): Promise<void>;
-  };
-
-  // Verify and consume the short-lived ticket before upgrading.
-  const verified = await stub.verifyDeviceConnectTicket(ticket);
-  if (!verified?.ok || !verified.deviceId) return new Response("unauthorized", { status: 401 });
-
-  // Accept the WebSocket and hand the server side to the UserDO (it accepts +
-  // wires the JSON-RPC tunnel; the agents forward calls to it).
-  const pair = new WebSocketPair();
-  const [client, server] = [pair[0], pair[1]];
-  await stub.attachDeviceSocket(verified.deviceId, server);
-
-  return new Response(null, { status: 101, webSocket: client } as ResponseInit & { webSocket: WebSocket });
+  // A WebSocket cannot cross the DO RPC boundary (not serializable) — but the
+  // upgrade Request can. Forward it to the UserDO, which verifies + consumes
+  // the ticket and accepts the socket inside its own fetch().
+  return ns.get(ns.idFromName(userId)).fetch(request);
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {
