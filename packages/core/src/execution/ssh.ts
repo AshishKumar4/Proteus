@@ -16,7 +16,9 @@
  *   laptop.exists("/Users/me/.config")
  */
 
+import { isAbortError, raceAbort } from '@proteus/agent-utils';
 import type { ExecutorProvider, ExecutorCapability } from './types.js';
+import { readExecSignal } from './signal.js';
 
 const NOT_CONNECTED =
   'No device connected. Connect your machine once at the user level ' +
@@ -45,16 +47,23 @@ export function createSSHTunnelExecutor(transport: DeviceTransport): ExecutorPro
   const tools: ExecutorProvider['tools'] = {
     exec: {
       description: 'Execute a command on the user\'s local machine via SSH tunnel.',
-      execute: async (command: unknown): Promise<string> => {
+      execute: async (command: unknown, options?: unknown): Promise<string> => {
         if (!isConnected()) return NOT_CONNECTED;
+        const signal = readExecSignal(options);
         try {
-          const result = await rpc('exec', [String(command)]) as
-            { stdout: string; stderr: string; exitCode: number };
+          // The device protocol has no kill RPC — abort stops the wait; the
+          // command may still finish on the user's machine.
+          const result = await raceAbort(
+            () => rpc('exec', [String(command)]),
+            signal,
+            'laptop exec aborted — the command may still finish on the device',
+          ) as { stdout: string; stderr: string; exitCode: number };
           if (result.exitCode !== 0) {
             return `Exit ${result.exitCode}${result.stderr ? ': ' + result.stderr : ''}`;
           }
           return result.stdout || '(no output)';
         } catch (err) {
+          if (isAbortError(err)) throw err;
           return `exec error: ${err instanceof Error ? err.message : String(err)}`;
         }
       },
