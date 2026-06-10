@@ -5,7 +5,7 @@ import { err, escapeHtml, json, safeJson } from '../lib/http.js';
 import { randomToken, timingSafeEqual } from '../lib/crypto.js';
 import type { OrchestratorAgent } from '../orchestrator.js';
 import type { UserDO } from '../user/user-do.js';
-import { approveCliAuth, inspectCliAuth, pollCliAuth, startCliAuth } from './auth-store.js';
+import { CliAuthCodeError, RateLimitError, approveCliAuth, inspectCliAuth, pollCliAuth, startCliAuth } from './auth-store.js';
 import { buildCliInstallCommand } from './install-command.js';
 import { listAvailableModels } from '../user/available-models.js';
 import { createCloudAgentForUser } from '../user/agent-create.js';
@@ -56,7 +56,7 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
     try {
       return json(await startCliAuth(env, url.origin, approvalOrigin(env, url), body?.deviceName, clientKey(request)));
     } catch (e) {
-      return err(429, (e as Error).message);
+      return cliAuthError(e);
     }
   }
 
@@ -66,7 +66,7 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
     try {
       return json(await pollCliAuth(env, body.deviceToken, clientKey(request)));
     } catch (e) {
-      return err(429, (e as Error).message);
+      return cliAuthError(e);
     }
   }
 
@@ -77,7 +77,7 @@ export async function handleCliRequest(request: Request, env: Env, ctx?: Executi
     const body = await safeJson<{ userCode?: string }>(request);
     if (!body?.userCode) return err(400, 'userCode required');
     try { return json(await approveCliAuth(env, body.userCode, identity, clientKey(request))); }
-    catch (e) { return err(400, (e as Error).message); }
+    catch (e) { return cliAuthError(e); }
   }
 
   const cli = await authenticateCli(request, env);
@@ -1028,6 +1028,14 @@ exec bun run packages/cli/bin/cli.ts "$@"
       'cache-control': 'no-store',
     },
   });
+}
+
+/** Rate limits are 429, caller-correctable code failures are 400, and
+ *  everything else (D1 outage, UserDO failure, …) is a real 500. */
+function cliAuthError(e: unknown): Response {
+  if (e instanceof RateLimitError) return err(429, e.message);
+  if (e instanceof CliAuthCodeError) return err(400, e.message);
+  return err(500, e instanceof Error ? e.message : String(e));
 }
 
 function accessError(e: unknown, request?: Request): Response {
