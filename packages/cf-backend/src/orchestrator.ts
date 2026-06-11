@@ -1545,13 +1545,15 @@ export class OrchestratorAgent extends Think<Env> {
     // Auto-judge shadow evaluation. When a pending scaffold exists,
     // sample-and-run (default 25%) the pending against this turn's task,
     // ask a judge LLM to compare, record. When minTrials is reached AND
-    // agent_config.auto_promote_scaffold='true', auto-apply the decision.
+    // agent_config.auto_promote_scaffold allows it (default ON; the
+    // changelog makes the decision visible and revertable), auto-apply.
     void this.runShadowEvalSampled(userText, assistantText);
 
     // Sleep-time compute — between-turn background memory compression.
     // Reads recent turn, asks a judge to upsert/decay the agent_facts world
     // model. Letta-style; ~50% test-time token reduction reported. Gated by
-    // agent_config.sleep_time_compute='true' (default off).
+    // agent_config.sleep_time_compute (default ON; fact upserts land in the
+    // Evolution Changelog and are revertable).
     void this.runSleepTimeCompute(userText, assistantText, this.acc.toolCalls);
 
     // On the first turn, replace the creation-time slug with a concise
