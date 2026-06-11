@@ -33,7 +33,7 @@ import type { SerializableToolDescriptor } from "./user/mcp.js";
 import type { TimelineSpan, DirEntry } from "./lib/protocol.js";
 import { runEventToSpan, classifyEvolutionType, safeJsonParse } from "./lib/timeline.js";
 import { nextCronFire } from "./lib/cron.js";
-import { compactionThreshold } from "./lib/context-window.js";
+import { compactionThreshold, compactionThresholdForWindow, catalogContextWindow } from "./lib/context-window.js";
 import { generateJson } from "./lib/generate-json.js";
 import { diffLines, computeWorkspaceDiff, parseGitDiff, type DiffLine, type FileDiff } from "./lib/diff.js";
 import { parseReaddirEntries, sortDirEntries, writeExecutorFileOp, type ExecutorWriteResult } from "./lib/files.js";
@@ -125,6 +125,7 @@ import {
   type ProductChangeApproval, type ProductChangeCheck, type ProductChangeStatus,
   type ProductDeploymentRecord, type ProductChangeToolDeps, type ProductSourceBindingInput,
   readSoul, SOUL_PATH, summarizeSoul, writeSoul,
+  parseModelSpec,
   // AGENTS.md (agents.md standard) — cloud workspace discovery
   collectWorkspaceAgentsMd,
   // Device shadow-git checkpoints (forwarded to the pc-agent daemon)
@@ -1227,10 +1228,47 @@ export class OrchestratorAgent extends Think<Env> {
     // active model's context window (≈15% headroom for the streaming response),
     // and a registered summarizer turns the middle of the transcript into a
     // summary overlay instead of dropping messages (hermes head/tail protection).
-    const threshold = compactionThreshold(this.getStoredModelId() ?? "");
     return session
-      .compactAfter(threshold)
+      .compactAfter(this.sessionCompactionThreshold())
       .onCompaction(this.summarizeForCompaction());
+  }
+
+  /** Resolved `<provider>/<modelId>` the next turn will actually use — the
+   *  same resolution getModel() applies. Computing the threshold from the RAW
+   *  stored spec was the 41%-of-Kimi bug: an unset model gave "" → the 128k
+   *  default window instead of the resolved default model's real 262k. Falls
+   *  back to the raw spec only pre-claim (no provider registry yet). */
+  private effectiveModelSpec(): string {
+    const stored = this.getStoredModelId();
+    try {
+      return this.providerRegistry().normalizeSpecSync(stored);
+    } catch {
+      return stored ?? '';
+    }
+  }
+
+  /** Catalog-reported context window for the resolved spec, cached per spec.
+   *  Arms an async catalog lookup on first sight of a spec; until (and unless)
+   *  it lands, the static fallback table answers. */
+  private _catalogWindow: { spec: string; window: number | null } | null = null;
+  private sessionCompactionThreshold(): number {
+    const spec = this.effectiveModelSpec();
+    if (this._catalogWindow?.spec !== spec) {
+      this._catalogWindow = { spec, window: null };
+      void this.lookupCatalogWindow(spec);
+    }
+    const reported = this._catalogWindow.window;
+    return reported ? compactionThresholdForWindow(reported) : compactionThreshold(spec);
+  }
+
+  private async lookupCatalogWindow(spec: string): Promise<void> {
+    if (!spec) return;
+    try {
+      const { provider, modelId } = parseModelSpec(spec);
+      const reg = this.providerRegistry();
+      const window = await catalogContextWindow(reg.registry.get(provider), reg.deps, modelId);
+      if (window && this._catalogWindow?.spec === spec) this._catalogWindow.window = window;
+    } catch { /* catalog unavailable — the static fallback table stays authoritative */ }
   }
 
   /** Hermes-style compaction fn: summarizes the middle of an over-long
@@ -1276,6 +1314,11 @@ export class OrchestratorAgent extends Think<Env> {
     this._cliCwd = readCliCwd(ctx.body);
     this._inFlight = true;
     this.logActivity("beforeturn", "streamText() called next");
+    // Re-arm the compaction threshold each turn: configureSession runs at
+    // onStart, which can precede claimOwner (no resolvable model yet) and
+    // never sees mid-activation model switches or the async catalog window
+    // landing. compactAfter is a cheap setter.
+    this.session.compactAfter(this.sessionCompactionThreshold());
     // A real user message is the verdict on the previous turn — dispatch the
     // detached outcome review (Hermes-style forked background review). Runs
     // concurrently with this turn; never blocks it. Programmatic turns
