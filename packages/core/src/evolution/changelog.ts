@@ -109,24 +109,34 @@ function scaffoldEntries(sql: SqlExecutor): ChangelogEntry[] {
   });
 }
 
+function craftScoreMap(sql: SqlExecutor): Map<string, { score: number; uses: number }> {
+  // craft_scores is created lazily by the EMA path — its absence must not
+  // hide crafted tools from the digest, only their scores.
+  try {
+    const rows = sql<{ tool_name: string; score: number; uses: number }>`
+      SELECT tool_name, score, uses FROM craft_scores`;
+    return new Map(rows.map((r) => [r.tool_name, { score: r.score, uses: r.uses }]));
+  } catch {
+    return new Map();
+  }
+}
+
 function toolEntries(sql: SqlExecutor, limit: number): ChangelogEntry[] {
   try {
-    const rows = sql<{
-      name: string; description: string; created_at: number; updated_at: number;
-      score: number | null; uses: number | null;
-    }>`
-      SELECT t.name, t.description, t.created_at, t.updated_at, s.score, s.uses
-      FROM crafted_tools t LEFT JOIN craft_scores s ON s.tool_name = t.name
-      ORDER BY t.updated_at DESC LIMIT ${limit}`;
+    const rows = sql<{ name: string; description: string; created_at: number; updated_at: number }>`
+      SELECT name, description, created_at, updated_at
+      FROM crafted_tools ORDER BY updated_at DESC LIMIT ${limit}`;
+    const scores = craftScoreMap(sql);
     return rows.map((r) => {
       const at = Math.max(r.updated_at, r.created_at);
       const verb = r.updated_at > r.created_at ? 'Updated crafted tool' : 'Crafted tool';
+      const s = scores.get(r.name);
       return {
         id: `tool:${r.name}:${at}`,
         kind: 'tool' as const,
         at,
         summary: `${verb} ${r.name}${r.description ? ` — ${r.description.slice(0, 100)}` : ''}`,
-        evidence: r.score != null ? `EMA ${r.score.toFixed(2)} over ${r.uses ?? 0} uses` : 'unscored (new)',
+        evidence: s ? `EMA ${s.score.toFixed(2)} over ${s.uses} uses` : 'unscored (new)',
         revert: { type: 'craft_retire' as const, target: r.name },
       };
     });
