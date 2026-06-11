@@ -34,6 +34,7 @@ import {
   webhookCommand,
 } from '../src/commands/inspect.js';
 import { exportCommand, importCommand } from '../src/commands/export-import.js';
+import { tokensCommand } from '../src/commands/tokens.js';
 import { printHelp, printError } from '../src/display.js';
 
 const program = new Command();
@@ -78,6 +79,14 @@ program
   .description('Sign out of the Proteus CLI')
   .option('--origin <url>', 'Proteus app origin')
   .action(wrapAction(logoutCommand));
+
+program
+  .command('tokens [action] [name]')
+  .description('Manage long-lived CI access tokens (list, create, revoke)')
+  .option('--name <name>', 'Token name for create')
+  .option('--scopes <scopes>', 'Comma-separated scopes: agent.exec, agent.read')
+  .option('--json', 'Print raw JSON')
+  .action(wrapAction(tokensCommand));
 
 program
   .command('setup')
