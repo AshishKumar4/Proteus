@@ -22,9 +22,9 @@ export {
 } from './sandbox.js';
 export { createSSHTunnelExecutor, type DeviceTransport } from './ssh.js';
 export {
-  devicePresence, parseDevicePresence, deviceChangeNotice,
+  devicePresence, parseDevicePresence, deviceChangeNotice, observeDevicePresence,
   DEVICE_PRESENCE_CONFIG_KEY,
-  type DeviceStatus, type DevicePresence,
+  type DeviceStatus, type DevicePresence, type DevicePresenceStore,
 } from './device-status.js';
 export {
   DeviceTunnel, type TunnelSocket,

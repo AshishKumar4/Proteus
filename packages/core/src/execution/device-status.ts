@@ -34,6 +34,30 @@ export function parseDevicePresence(value: string | null | undefined): DevicePre
   return value === 'connected' || value === 'offline' || value === 'none' ? value : null;
 }
 
+/** The key-value surface observeDevicePresence persists its watermark in —
+ *  satisfied by the AgentConfigStore's generic accessors. */
+export interface DevicePresenceStore {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+}
+
+/**
+ * Record a fresh hub observation at turn start: diff it against the last
+ * persisted presence, advance the watermark, and return the one-turn change
+ * notice (or null). The notice fires exactly once per transition — the
+ * watermark only advances here, so a connect between turns is announced on
+ * the next turn and never again.
+ */
+export function observeDevicePresence(
+  store: DevicePresenceStore,
+  status: DeviceStatus,
+): { presence: DevicePresence; notice: string | null } {
+  const presence = devicePresence(status);
+  const lastSeen = parseDevicePresence(store.get(DEVICE_PRESENCE_CONFIG_KEY));
+  if (lastSeen !== presence) store.set(DEVICE_PRESENCE_CONFIG_KEY, presence);
+  return { presence, notice: deviceChangeNotice(lastSeen, presence) };
+}
+
 /**
  * The clearly-marked context block injected at the latest position of the
  * next turn when device availability changed mid-session. Null when nothing

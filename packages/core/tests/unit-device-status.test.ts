@@ -4,8 +4,15 @@ import { describe, expect, test } from 'bun:test';
 import {
   deviceChangeNotice,
   devicePresence,
+  observeDevicePresence,
   parseDevicePresence,
+  type DevicePresenceStore,
 } from '../src/execution/device-status.js';
+
+function memoryStore(): DevicePresenceStore {
+  const kv = new Map<string, string>();
+  return { get: (k) => kv.get(k) ?? null, set: (k, v) => { kv.set(k, v); } };
+}
 
 describe('devicePresence', () => {
   test('reduces the hub snapshot to the three prompt states', () => {
@@ -62,5 +69,30 @@ describe('deviceChangeNotice', () => {
   test('stays silent for offline ↔ none (no capability change)', () => {
     expect(deviceChangeNotice('offline', 'none')).toBeNull();
     expect(deviceChangeNotice('none', 'offline')).toBeNull();
+  });
+});
+
+describe('observeDevicePresence', () => {
+  test('a mid-session connect is announced on exactly the next turn', () => {
+    const store = memoryStore();
+    // Turn 1: no device yet — first observation seeds the watermark silently.
+    expect(observeDevicePresence(store, { connected: false, registered: false }))
+      .toEqual({ presence: 'none', notice: null });
+    // The user runs `proteus connect` between turns.
+    const turn2 = observeDevicePresence(store, { connected: true, registered: true });
+    expect(turn2.presence).toBe('connected');
+    expect(turn2.notice).toContain('just connected');
+    // Turn 3: same state — no repeat notice.
+    expect(observeDevicePresence(store, { connected: true, registered: true }).notice).toBeNull();
+  });
+
+  test('disconnect then reconnect produces one notice per transition', () => {
+    const store = memoryStore();
+    observeDevicePresence(store, { connected: true, registered: true });
+    expect(observeDevicePresence(store, { connected: false, registered: true }).notice)
+      .toContain('disconnected');
+    expect(observeDevicePresence(store, { connected: false, registered: true }).notice).toBeNull();
+    expect(observeDevicePresence(store, { connected: true, registered: true }).notice)
+      .toContain('just connected');
   });
 });
