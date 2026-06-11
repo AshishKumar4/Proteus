@@ -7,7 +7,9 @@
  * (`consents`, `localControls`) and is null elsewhere.
  */
 
-import type { BroadcastEvent, PromptFile, ShellApprovalMode } from '@proteus/core';
+import type {
+  BroadcastEvent, ChangelogEntry, ChangelogRevertResult, PromptFile, ShellApprovalMode,
+} from '@proteus/core';
 import type { CliSession, CliSessionInfo } from './session.js';
 import type { AgentModelEntry } from './model-catalog.js';
 
@@ -162,6 +164,14 @@ export function forkCandidates(
   return candidates;
 }
 
+/** The Evolution Changelog digest as surfaces consume it. `unseenCount` is
+ *  the pre-view value (what the badge showed); fetching marks the digest
+ *  seen — viewing IS the acknowledgement. */
+export interface AgentChangelogView {
+  entries: ChangelogEntry[];
+  unseenCount: number;
+}
+
 export interface PendingDeviceConsent {
   consentId: string;
   deviceLabel: string;
@@ -228,6 +238,10 @@ export interface AgentClient {
 
   status(): Promise<AgentClientStatus>;
   describeTools(): Promise<AgentToolSurface>;
+  /** The Evolution Changelog digest; fetching marks it seen. */
+  changelog(limit?: number): Promise<AgentChangelogView>;
+  /** Revert one changelog entry by id through the real rollback paths. */
+  revertChangelogEntry(id: string): Promise<ChangelogRevertResult>;
   readMemory(): Promise<string>;
   searchNodes(): Promise<AgentSearchNode[]>;
   listJobs(limit?: number): Promise<AgentJobSummary[]>;
