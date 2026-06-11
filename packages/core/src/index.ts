@@ -158,7 +158,10 @@ export { recordNode } from './mcts/record-node.js';
 export type { SessionWriter, SessionMessage, SessionMessagePart } from './mcts/record-node.js';
 export { converge } from './mcts/convergence.js';
 export { pruneAndReflect } from './mcts/pruning.js';
-export { evaluateWithMultiModelJudging } from './mcts/evaluation.js';
+export {
+  evaluateWithMultiModelJudging,
+  type EvaluateBranchOptions, type BranchEvaluation,
+} from './mcts/evaluation.js';
 // Process Reward Models — step-level scoring for fine-grained MCTS pruning
 // and scaffold runtime early-termination.
 export {
