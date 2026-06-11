@@ -50,6 +50,7 @@ import {
   // canonical tool + prompt surface — single source of truth
   buildBuiltinTools,
   buildSystemPromptSync,
+  appendVolatileContextMessage, hashSystemPrompt,
   // backend-agnostic per-turn accounting + orchestration (shared by cf + cli)
   TurnAccumulator, type StepLike, AgentOrchestrator, type BackendHost,
   shouldBackupWorkspace, workspaceBackupOptions,
@@ -957,21 +958,19 @@ export class OrchestratorAgent extends Think<Env> {
       this._cachedSystemPromptKey = key;
       this.logActivity("getsystemprompt_end", `${base.length} chars`);
     }
-    // Append the recent-facts tail (changes per turn, so it sits AFTER the
-    // cacheable instruction+tools prefix). Single source — see factsTail().
-    return base + this.factsTail();
+    // BYTE-STABLE: no per-turn state rides here. The volatile half (facts,
+    // executor status, device notice, skill activations) is appended to the
+    // turn's MESSAGES in beforeTurn — see prompting/volatile-context.ts.
+    return base;
   }
 
-  /** The recent-facts block appended to the system prompt — rendered fresh each
-   *  turn (facts change), so it's intentionally outside the cached prefix.
-   *  Returns '' when there are no facts. One source for both the base-prompt
-   *  and the skills-override paths (was copy-pasted). */
-  private factsTail(): string {
+  /** The recent-facts block for the volatile turn-context message — rendered
+   *  fresh each turn (facts change), so it stays out of the cacheable system
+   *  prefix. Undefined when there are no facts yet. */
+  private renderFactsForTurn(): string | undefined {
     try {
-      const block = renderFactsBlock(this.facts.recentTopK(20), { maxChars: 2000 });
-      if (block) return `\n\n## World model (facts you remembered):\n${block}`;
-    } catch { /* facts table not yet initialized */ }
-    return '';
+      return renderFactsBlock(this.facts.recentTopK(20), { maxChars: 2000 }) || undefined;
+    } catch { return undefined; /* facts table not yet initialized */ }
   }
 
   /**
@@ -1447,12 +1446,15 @@ export class OrchestratorAgent extends Think<Env> {
 
     // The per-turn system prompt is ALWAYS assembled here (TurnConfig.system
     // overrides) — Think calls getSystemPrompt() BEFORE beforeTurn, so only
-    // this path can reflect the device status refreshed above plus the turn's
-    // active skills and MCP tools. The device change notice rides at the very
-    // end, after the facts tail (latest position in the context).
+    // this path can reflect the turn's active skills and MCP tools. It is the
+    // byte-stable cache prefix: it changes only on real agent events (soul,
+    // model, skill set, tool surface, AGENTS.md). Per-turn state — facts,
+    // live executor status, the device notice, activation reasons — rides in
+    // ONE volatile context message appended at the END of the turn's messages
+    // (prompting/volatile-context.ts), so it never re-prefills the prefix.
     const execs = this.rt.executionRouter?.listExecutors() ?? [];
     const modelId = this.getStoredModelId();
-    let systemOverride = buildSystemPromptSync(this.rt, {
+    const systemOverride = buildSystemPromptSync(this.rt, {
       executors: execs,
       availableTools: activeTools,
       ...(activeSetForPrompt ? { activeSkills: activeSetForPrompt } : {}),
@@ -1460,13 +1462,32 @@ export class OrchestratorAgent extends Think<Env> {
       externalTools: mcpToolNames.map((name) => ({ name, source: 'mcp' as const })),
       backend: 'cf',
       model: { id: modelId ?? undefined },
-    }) + this.factsTail();
-    if (deviceNotice) systemOverride += `\n\n${deviceNotice}`;
+    });
+    this.recordSystemPromptHash(systemOverride);
 
     const cfg: TurnConfig = { activeTools: effectiveActiveTools, system: systemOverride };
-    if (this._cliCwd) cfg.messages = withCliCwdContext(ctx.messages, this._cliCwd);
+    const baseMessages = this._cliCwd ? withCliCwdContext(ctx.messages, this._cliCwd) : ctx.messages;
+    cfg.messages = appendVolatileContextMessage(baseMessages, {
+      factsBlock: this.renderFactsForTurn(),
+      executors: execs,
+      deviceNotice,
+      ...(this._turnActiveSkills ? { activeSkills: this._turnActiveSkills } : {}),
+    });
     if (effectiveTools) cfg.tools = effectiveTools;
     return cfg;
+  }
+
+  /** The byte-stability invariant as telemetry: the system prompt hash should
+   *  change only on real agent events (soul/skill/craft/device/model), never
+   *  between two vanilla consecutive turns. A "(changed)" entry in the
+   *  activity log without a nearby skills_active / device / craft event is a
+   *  cache-prefix regression. */
+  private _lastSystemPromptHash: string | null = null;
+  private recordSystemPromptHash(system: string): void {
+    const hash = hashSystemPrompt(system);
+    const prev = this._lastSystemPromptHash;
+    this._lastSystemPromptHash = hash;
+    this.logActivity('system_prompt_hash', `${hash}${prev === null ? '' : prev === hash ? ' (stable)' : ' (changed)'}`);
   }
 
   onChunk(_ctx: ChunkContext): void {

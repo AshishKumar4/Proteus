@@ -175,6 +175,14 @@ export {
   type AgentsMdFile,
 } from './prompting/agents-md.js';
 export {
+  appendVolatileContextMessage,
+  executorAvailabilityLabel,
+  hashSystemPrompt,
+  renderVolatileContext,
+  VOLATILE_CONTEXT_HEADER,
+  type VolatileTurnContext,
+} from './prompting/volatile-context.js';
+export {
   extractJsonArray,
   extractJsonObject,
   jsonArrayOnlyInstruction,

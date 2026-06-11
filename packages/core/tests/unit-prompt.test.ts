@@ -127,7 +127,6 @@ describe('buildSystemPromptSync', () => {
     });
 
     expect(prompt).toContain('nimbus.*');
-    expect(prompt).toContain('ready on demand');
     expect(prompt).toContain('workspace.*');
     expect(prompt).toContain('internal Proteus state');
     expect(prompt).not.toContain('laptop');
@@ -162,7 +161,6 @@ describe('buildSystemPromptSync', () => {
     });
 
     expect(prompt).toContain('laptop.*');
-    expect(prompt).toContain('(connected)');
     expect(prompt).toContain("the user's OWN PC");
     expect(prompt).toContain('consent');
     expect(prompt).toContain('expected, not an error');
