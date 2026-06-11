@@ -1220,9 +1220,9 @@ export class OrchestratorAgent extends Think<Env> {
   }
 
   configureSession(session: Session): Session {
-    // The agent's durable context is `getSystemPrompt()` (soul + tools + the
-    // agent_facts world model) plus the persisted conversation — a single
-    // source of truth, not Think's freezable context blocks. The only Session
+    // The agent's durable context is `getSystemPrompt()` (soul + tools) plus
+    // the persisted conversation and the per-turn volatile context message —
+    // a single source of truth, not Think's freezable context blocks. The only Session
     // policy we attach is compaction: the chat window compacts at ~85% of the
     // active model's context window (≈15% headroom for the streaming response),
     // and a registered summarizer turns the middle of the transcript into a
