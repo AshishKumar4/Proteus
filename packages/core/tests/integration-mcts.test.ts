@@ -64,7 +64,6 @@ describe('MCTS integration', () => {
           text: `branch ${i} explored`,
           codeUsed: i % 2 === 0 ? 'const x = FAIL_MARKER;' : null,
         }),
-        evaluate: async () => 0,
         generateReflection: async () => `reflection for branch ${i}`,
       };
     };
@@ -124,7 +123,6 @@ describe('MCTS integration', () => {
           text: `approach ${i}`,
           codeUsed: i === 0 ? 'const broken = FAIL_MARKER;' : 'const ok = 1;',
         }),
-        evaluate: async () => 0,
         generateReflection: async () => 'n/a',
       };
     };
@@ -151,7 +149,6 @@ describe('MCTS integration', () => {
     rt.judgeModel = llm;
     rt.spawnBranch = async () => ({
       explore: async () => ({ text: 'prose approach', codeUsed: null }),
-      evaluate: async () => 0,
       generateReflection: async () => 'n/a',
     });
 
@@ -172,7 +169,6 @@ describe('MCTS integration', () => {
     const { rt } = createTestRuntime();
     rt.spawnBranch = async () => ({
       explore: async () => ({ text: 'explored', codeUsed: null }),
-      evaluate: async () => 0,
       generateReflection: async () => 'n/a',
     });
 
@@ -206,7 +202,6 @@ describe('MCTS integration', () => {
     });
     rt.spawnBranch = async () => ({
       explore: async () => ({ text: 'bad approach', codeUsed: null }),
-      evaluate: async () => 0,
       generateReflection: async () => 'approach failed because auth layer is tightly coupled',
     });
 
@@ -240,7 +235,6 @@ describe('MCTS integration', () => {
     });
     rt.spawnBranch = async () => ({
       explore: async () => ({ text: 'hopeless attempt', codeUsed: null }),
-      evaluate: async () => 0,
       generateReflection: async () => 'everything failed',
     });
 
@@ -265,7 +259,6 @@ describe('MCTS integration', () => {
     rt.judgeModel = downLLM;
     rt.spawnBranch = async () => ({
       explore: async () => ({ text: 'provider produced rollout', codeUsed: null }),
-      evaluate: async () => 0,
       generateReflection: async () => 'judge failure should penalize the branch',
     });
 
@@ -294,7 +287,6 @@ describe('MCTS strategy — stored operator overrides', () => {
     const { rt } = createTestRuntime();
     rt.spawnBranch = async () => ({
       explore: async () => ({ text: 'explored', codeUsed: null }),
-      evaluate: async () => 0,
       generateReflection: async () => 'n/a',
     });
     initTables(rt);
@@ -322,7 +314,6 @@ describe('MCTS strategy — stored operator overrides', () => {
     rt.judgeModel = llm;
     rt.spawnBranch = async () => ({
       explore: async () => ({ text: 'explored', codeUsed: null }),
-      evaluate: async () => 0,
       generateReflection: async () => 'n/a',
     });
     initTables(rt);
