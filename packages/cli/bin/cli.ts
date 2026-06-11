@@ -6,7 +6,7 @@
 import { Command, Option } from 'commander';
 import { createCommand } from '../src/commands/create.js';
 import { chatCommand } from '../src/commands/chat.js';
-import { runCommand } from '../src/commands/run.js';
+import { execCommand, runCommand } from '../src/commands/run.js';
 import { authCommand, logoutCommand, whoamiCommand } from '../src/commands/auth.js';
 import { aliasCommand, aliasesCommand, unaliasCommand } from '../src/commands/alias.js';
 import { desktopCommand } from '../src/commands/desktop.js';
@@ -21,7 +21,6 @@ import { listCommand } from '../src/commands/list.js';
 import { jobsCommand, modelCommand, toolsCommand, triggersCommand } from '../src/commands/control.js';
 import {
   eventsCommand,
-  execCommand,
   executorsCommand,
   gepaCommand,
   headsCommand,
@@ -243,11 +242,17 @@ program
   .option('--json', 'Print raw JSON')
   .action(wrapAction(executorsCommand));
 
-program
-  .command('exec <name> <executor> [command...]')
-  .description('Run a command through an agent executor')
-  .option('--json', 'Print raw JSON')
-  .action(wrapAction(execCommand));
+llmOpts(
+  program
+    .command('exec [prompt...]')
+    .description('Run one agent task headlessly and exit (CI-friendly; executor passthrough lives under `executors`)')
+    .option('-a, --agent <name>', 'Agent to run (defaults to the only configured agent)')
+    .option('--json', 'Emit line-delimited JSON events')
+    .option('--resume <sessionId>', 'Continue a recorded CLI session')
+    .option('--session-dir <dir>', 'Override CLI session storage directory')
+    .option('--no-session', 'Do not record this run')
+    .option('-n, --name <label>', 'Human-readable session label'),
+).action(wrapAction(execCommand));
 
 program
   .command('product <name>')
