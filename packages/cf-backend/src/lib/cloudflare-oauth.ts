@@ -1,7 +1,10 @@
 import type { OAuthCredential } from '@proteus/core';
 
 export const CLOUDFLARE_OAUTH_CRED_KEY = 'cloudflare.oauth';
-export const CLOUDFLARE_WORKERS_AI_SCOPES = 'user-details.read account-settings.read ai.write aig.run';
+// `offline_access` is what makes dash.cloudflare.com issue a refresh token
+// (the OAuth client must also have the Refresh Token grant enabled). Without
+// it the credential dies at access-token expiry and Workers AI "disconnects".
+export const CLOUDFLARE_WORKERS_AI_SCOPES = 'user-details.read account-settings.read ai.write aig.run offline_access';
 export const DEFAULT_CLOUDFLARE_AI_GATEWAY_ID = 'default';
 
 const CLOUDFLARE_API = 'https://api.cloudflare.com/client/v4';
