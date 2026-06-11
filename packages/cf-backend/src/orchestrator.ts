@@ -17,7 +17,7 @@
  */
 
 import { callable } from "agents";
-import { createCompactFunction } from "agents/experimental/memory/utils";
+import { createProteusCompactFunction } from "./lib/compaction.js";
 import { getSandbox } from "@cloudflare/sandbox";
 import { Think, Session } from "@cloudflare/think";
 // preamble-injection pattern: we construct the codemode tool
@@ -1271,9 +1271,11 @@ export class OrchestratorAgent extends Think<Env> {
   }
 
   /** Hermes-style compaction fn: summarizes the middle of an over-long
-   *  transcript via the agent's own model, protecting head + recent tail. */
+   *  transcript via the agent's own model with the structured handoff
+   *  template, protecting head + a 40k-token recent tail and pruning old
+   *  tool outputs before the summarizer call (lib/compaction.ts). */
   private summarizeForCompaction() {
-    return createCompactFunction({
+    return createProteusCompactFunction({
       summarize: (prompt) =>
         generateText({ model: this.getModel(), prompt }).then((r) => r.text),
     });
