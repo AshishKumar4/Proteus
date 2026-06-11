@@ -134,13 +134,15 @@ export function escalationForWrite(policy: SandboxPolicy, path: string): Sandbox
     detail: policy.mode === 'read-only'
       ? `write to ${path} blocked: mode 'read-only' permits no writes`
       : `write to ${path} blocked: outside writable roots [${policy.writableRoots.join(', ')}]`,
-    remedy: FS_REMEDY,
+    remedy: fsRemedy(policy.mode),
   };
 }
 
-const FS_REMEDY =
-  "ask the user/operator to raise the sandbox mode (setSandboxMode 'workspace-write' or 'full') " +
-  'or add the path to the sandbox writable roots, then retry';
+function fsRemedy(mode: SandboxMode): string {
+  return mode === 'read-only'
+    ? "ask the user/operator to raise the sandbox mode (setSandboxMode 'workspace-write' or 'full'), then retry"
+    : "ask the user/operator to add the path to the sandbox writable roots or grant mode 'full' (setSandboxMode), then retry";
+}
 const NET_REMEDY =
   "network is disabled in this sandbox mode; ask the user/operator to enable sandbox network access or grant mode 'full', then retry";
 
@@ -184,7 +186,7 @@ export function detectSandboxDenial(
   if (enforced.filesystem && policy.mode !== 'full') {
     const line = matchLine(result.stderr, FS_DENIAL);
     if (line) {
-      return { kind: 'sandbox_escalation', mode: policy.mode, blocked: 'filesystem', detail: line, remedy: FS_REMEDY };
+      return { kind: 'sandbox_escalation', mode: policy.mode, blocked: 'filesystem', detail: line, remedy: fsRemedy(policy.mode) };
     }
   }
   if (enforced.network && !policy.network) {
