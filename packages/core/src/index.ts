@@ -134,6 +134,14 @@ export {
 } from './tools/registry.js';
 export { buildBuiltinTools, type BuiltinToolDeps, type ProductChangeToolDeps } from './tools/builtins.js';
 export {
+  clampToolResult,
+  clampSerializedToolResult,
+  withClampedToolResult,
+  DEFAULT_TOOL_RESULT_MAX_CHARS,
+  TOOL_OUTPUT_DIR,
+  type ClampToolResultOptions,
+} from './tools/clamp.js';
+export {
   codegenDisallowed,
   toCraftedToolSource,
   type CraftedToolExecute,
