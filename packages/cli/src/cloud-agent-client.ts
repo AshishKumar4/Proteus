@@ -61,7 +61,6 @@ interface ActiveTurn {
   toolCalls: AgentTurnResult['toolCalls'];
   toolById: Map<string, AgentTurnResult['toolCalls'][number]>;
   resolve: (result: AgentTurnResult) => void;
-  reject: (err: Error) => void;
 }
 
 /**
@@ -123,10 +122,12 @@ export class CloudAgentClient implements AgentClient {
   /** Cloud steer: the DO persists an incoming chat request immediately and
    *  serializes it on its TurnQueue, so a mid-turn submit reaches the agent
    *  now and runs as the next turn at the boundary. Fire-and-forget — the
-   *  response streams through the shared event feed. */
+   *  response (and any pre-flight failure) streams through the event feed. */
   steer(prompt: AgentPrompt, opts: AgentClientSendOptions = {}): boolean {
     if (this.activeTurns.size === 0) return false;
-    void this.submit(prompt, opts, true).catch(() => { /* surfaced via error events */ });
+    void this.submit(prompt, opts, true).catch((err) => {
+      this.emit({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+    });
     return true;
   }
 
@@ -149,16 +150,16 @@ export class CloudAgentClient implements AgentClient {
     this.emit({ type: 'turn-start', kind: 'user', text });
 
     const requestId = randomRequestId();
-    return await new Promise<AgentTurnResult>((resolve, reject) => {
-      this.activeTurns.set(requestId, {
+    return await new Promise<AgentTurnResult>((resolve) => {
+      const turn: ActiveTurn = {
         startedAt: Date.now(),
         text: '',
         steps: 0,
         toolCalls: [],
         toolById: new Map(),
         resolve,
-        reject,
-      });
+      };
+      this.activeTurns.set(requestId, turn);
 
       try {
         ws.send(JSON.stringify({
@@ -174,8 +175,10 @@ export class CloudAgentClient implements AgentClient {
           type: CHAT_MESSAGE_TYPES.USE_CHAT_REQUEST,
         }));
       } catch (err) {
+        // The turn-start already went out — keep the lifecycle paired.
         this.activeTurns.delete(requestId);
-        reject(err instanceof Error ? err : new Error(String(err)));
+        this.emit({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        this.settleTurn(turn, true);
       }
     });
   }

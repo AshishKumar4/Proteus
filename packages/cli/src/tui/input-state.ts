@@ -83,7 +83,16 @@ export function reduceInput(state: InputState, event: InputMachineEvent): InputT
           : { state: { ...state, escArmedAt: null }, effects: [{ kind: 'exit' }] };
       }
       if (busy) {
-        return { state: { ...state, escArmedAt: event.now }, effects: [{ kind: 'interrupt' }] };
+        // Interrupt means stop — queued drafts must not auto-fire when the
+        // aborted turn settles; they return to the composer for editing.
+        const restored = [event.draft.trim(), ...state.queue].filter(Boolean).join('\n');
+        return {
+          state: { ...state, escArmedAt: event.now, queue: [] },
+          effects: [
+            { kind: 'interrupt' },
+            ...(state.queue.length > 0 ? [{ kind: 'set-input', text: restored } satisfies InputEffect] : []),
+          ],
+        };
       }
       if (event.draft.trim()) {
         return { state: { ...state, escArmedAt: event.now }, effects: [{ kind: 'clear-input' }] };

@@ -84,6 +84,11 @@ export async function runChatLoop(opts: ChatLoopOpts): Promise<void> {
       interruptRequested = true;
       client.stop();
       console.log(WARN('\n  Interrupting the active turn… (Ctrl+C again to exit)'));
+      // Interrupt means stop — held messages must not auto-fire afterwards.
+      if (queuedInputs.length > 0) {
+        console.log(WARN(`  Dropping ${queuedInputs.length} queued message(s):`));
+        for (const queued of queuedInputs.splice(0)) console.log(DIM(`    ⧗ ${queued}`));
+      }
       return;
     }
     void onExit();

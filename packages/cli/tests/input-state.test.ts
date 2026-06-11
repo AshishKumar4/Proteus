@@ -125,6 +125,24 @@ describe('queue ordering', () => {
     expect(typing.state.queue).toEqual(['keep']);
   });
 
+  test('Esc interrupt returns queued drafts to the composer instead of auto-firing them', () => {
+    const busy = run(initialInputState,
+      { type: 'turn-start' },
+      { type: 'tab', draft: 'next thing' },
+      { type: 'tab', draft: 'after that' },
+    );
+    const interrupted = reduceInput(busy.state, esc(1_000, { draft: 'half typed' }));
+    expect(interrupted.effects).toEqual([
+      { kind: 'interrupt' },
+      { kind: 'set-input', text: 'half typed\nnext thing\nafter that' },
+    ]);
+    expect(interrupted.state.queue).toEqual([]);
+
+    // The aborted turn settling sends nothing.
+    const settled = reduceInput(interrupted.state, { type: 'turn-settled' });
+    expect(settled.effects).toEqual([]);
+  });
+
   test('turn counting survives overlapping turns (cloud steer) before draining', () => {
     const overlapped = run(initialInputState,
       { type: 'turn-start' },
