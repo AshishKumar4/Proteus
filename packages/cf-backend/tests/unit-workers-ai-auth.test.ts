@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateText } from 'ai';
 import { createAgentProviderRegistry } from '../src/providers/agent-registry.ts';
-import { refreshCloudflareCredential } from '../src/lib/cloudflare-oauth.ts';
+import { CloudflareOAuthTokenError, refreshCloudflareCredential } from '../src/lib/cloudflare-oauth.ts';
 
 const ACCOUNT_BASE_URL = 'https://api.cloudflare.com/client/v4/accounts/abc123abc123abc1/ai/v1';
 
@@ -68,6 +68,26 @@ describe('Workers AI credential refresh', () => {
       { CLOUDFLARE_OAUTH_CLIENT_ID: 'cid', CLOUDFLARE_OAUTH_CLIENT_SECRET: 'csec' },
       { kind: 'oauth', accessToken: 'cf-access-1' },
     )).rejects.toThrow(/no refresh token/i);
+  });
+
+  test('a revoked refresh token surfaces as a typed invalid_grant error', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      error: 'invalid_grant',
+      error_description: 'The provided authorization grant is invalid',
+    }), { status: 400, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+    try {
+      const attempt = refreshCloudflareCredential(
+        { CLOUDFLARE_OAUTH_CLIENT_ID: 'cid', CLOUDFLARE_OAUTH_CLIENT_SECRET: 'csec' },
+        { kind: 'oauth', accessToken: 'cf-access-1', refreshToken: 'cf-refresh-revoked' },
+      );
+      await expect(attempt).rejects.toBeInstanceOf(CloudflareOAuthTokenError);
+      await attempt.catch((err: CloudflareOAuthTokenError) => {
+        expect(err.oauthError).toBe('invalid_grant');
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test('a mid-flight 401 forces one refresh and retries with the fresh token', async () => {
@@ -140,5 +160,9 @@ describe('Workers AI credential refresh', () => {
     expect(userDO).toMatch(/UPDATE user_credentials SET value = \?, updated_at = \? WHERE key = \?`,\s*\n\s*JSON\.stringify\(next\), Date\.now\(\), CLOUDFLARE_OAUTH_CRED_KEY/);
     // …and the base-URL gate treats expired-but-refreshable as usable.
     expect(userDO).toContain('if (!isCloudflareCredentialUsable(cred)) return null;');
+    // A terminal invalid_grant strips the dead refresh token so the
+    // credential stops counting as usable and the connect CTA resurfaces.
+    expect(userDO).toContain("err.oauthError === 'invalid_grant'");
+    expect(userDO).toContain("if (refreshed === 'revoked') return null;");
   });
 });
