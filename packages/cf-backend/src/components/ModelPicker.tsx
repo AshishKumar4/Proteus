@@ -7,10 +7,9 @@
  */
 import { useMemo } from "react";
 import { Badge, Combobox } from "@cloudflare/kumo";
+import { formatContextWindow } from "@proteus/core";
 import type { ModelMenuEntry } from "../lib/user-api";
-import {
-  badgeCapabilities, formatContextWindow, groupModelMenu, modelMatchesQuery,
-} from "./model-picker-options";
+import { badgeCapabilities, groupModelMenu, modelMatchesQuery } from "./model-picker-options";
 
 export interface ModelPickerProps {
   models: ModelMenuEntry[];

@@ -1,7 +1,8 @@
 // Pure picker logic — grouping, filtering, badge shaping.
 import { describe, test, expect } from 'bun:test';
+import { formatContextWindow } from '@proteus/core';
 import {
-  badgeCapabilities, formatContextWindow, groupModelMenu, modelMatchesQuery,
+  badgeCapabilities, groupModelMenu, modelMatchesQuery,
 } from '../src/components/model-picker-options.ts';
 import type { ModelMenuEntry } from '../src/lib/user-api.ts';
 

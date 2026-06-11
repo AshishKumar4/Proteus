@@ -37,17 +37,6 @@ export function modelMatchesQuery(model: ModelMenuEntry, query: string): boolean
   return tokens.every((token) => haystack.includes(token));
 }
 
-/** "131k" / "1M" / "1.05M" — compact context-window badge text. */
-export function formatContextWindow(tokens: number | undefined): string | null {
-  if (!tokens || tokens <= 0) return null;
-  if (tokens >= 1_000_000) {
-    const m = tokens / 1_000_000;
-    return `${m >= 10 || Number.isInteger(m) ? Math.round(m) : m.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}M`;
-  }
-  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
-  return String(tokens);
-}
-
 /** Capabilities worth badging — every chat model streams and (in our
  *  catalogs) supports tools, so only the differentiators surface. */
 export function badgeCapabilities(model: ModelMenuEntry): string[] {

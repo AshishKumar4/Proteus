@@ -82,3 +82,15 @@ export function positiveInteger(value: unknown): number | undefined {
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
+
+/** "131k" / "1M" / "1.05M" — compact context-window text shared by the web
+ *  and TUI model pickers. Null when unknown. */
+export function formatContextWindow(tokens: number | undefined): string | null {
+  if (!tokens || tokens <= 0) return null;
+  if (tokens >= 1_000_000) {
+    const m = tokens / 1_000_000;
+    return `${m >= 10 || Number.isInteger(m) ? Math.round(m) : m.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}M`;
+  }
+  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
+  return String(tokens);
+}
