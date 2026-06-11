@@ -162,8 +162,8 @@ export {
   evaluateWithMultiModelJudging,
   type EvaluateBranchOptions, type BranchEvaluation,
 } from './mcts/evaluation.js';
-// Process Reward Models — step-level scoring for fine-grained MCTS pruning
-// and scaffold runtime early-termination.
+// Process Reward Models — step-level scoring. Unwired until branches gain
+// multi-step rollouts (see mcts/step-prm.ts header for the rationale).
 export {
   scoreStepWithJudge, blendStepScore,
   type StepScore, type StepScoreInput,
