@@ -21,7 +21,8 @@ import {
   startGepaRun, finishGepaRun,
   recordTurnOutcome, recordShadowEvaluation,
   modifyScaffold, applyPromotionDecision, getPendingScaffold,
-  type AgentRuntime,
+  EvolutionEngine,
+  type AgentRuntime, type EvolutionEvent,
 } from '../src/index.ts';
 import { createTestRuntime } from './helpers.ts';
 
@@ -317,5 +318,54 @@ describe('reverts — real paths only', () => {
     const refused = await revertChangelogEntryById({ rt, facts }, info.id);
     expect(refused.ok).toBe(false);
     expect(refused.error).toContain('informational');
+  });
+});
+
+describe('session-end digest — assembled when the window closes', () => {
+  test('onSessionComplete emits one changelog_digest covering the window', async () => {
+    const { rt, facts } = setup();
+    rt.storage.execRaw(`CREATE TABLE IF NOT EXISTS evolution_events (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(9)))),
+      type TEXT NOT NULL, message TEXT NOT NULL, data TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000))`);
+    const engine = new EvolutionEngine(rt);
+    const events: EvolutionEvent[] = [];
+    engine.onEvent((e) => events.push(e));
+
+    const startedAt = Date.now() - 5_000;
+    facts.upsert('discovered_mid_session', 'yes');
+    rt.craftStore.create({ name: 'session_tool', description: 'made this session', code: 'async () => 1', scope: 'local' });
+
+    await engine.onSessionComplete({
+      sessionId: 'sess-1',
+      turns: [{
+        userMessage: 'do the thing', assistantResponse: 'done', toolCalls: [],
+        steps: 1, durationMs: 10, feedback: null, hadError: false, origin: 'user',
+      }],
+      startedAt,
+      endedAt: Date.now(),
+    });
+
+    const digest = events.filter((e) => e.type === 'changelog_digest');
+    expect(digest).toHaveLength(1);
+    expect(digest[0].message).toContain('Self-change digest: 2 entries');
+    expect(digest[0].message).toContain('1 tool');
+    expect(digest[0].message).toContain('1 fact');
+    expect(digest[0].message).toContain('revertable');
+    // …and it lands in the durable evolution_events log for the timeline.
+    const rows = rt.storage.sql<{ type: string }>`
+      SELECT type FROM evolution_events WHERE type = 'changelog_digest'`;
+    expect(rows).toHaveLength(1);
+  });
+
+  test('a window that changed nothing emits no digest', async () => {
+    const { rt } = setup();
+    const engine = new EvolutionEngine(rt);
+    const events: EvolutionEvent[] = [];
+    engine.onEvent((e) => events.push(e));
+    await engine.onSessionComplete({
+      sessionId: 'sess-2', turns: [], startedAt: Date.now() - 1000, endedAt: Date.now(),
+    });
+    expect(events.filter((e) => e.type === 'changelog_digest')).toHaveLength(0);
   });
 });
