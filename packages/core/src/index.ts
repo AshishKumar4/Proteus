@@ -247,6 +247,7 @@ export { scaffoldEventsToUIStream } from './scaffold/ui-stream.js';
 export {
   initShadowTables,
   getPendingScaffold,
+  getCurrentScaffoldVersion,
   readScaffoldVersion,
   readShadowVerdict,
   recordShadowEvaluation,
