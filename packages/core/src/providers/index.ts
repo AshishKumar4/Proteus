@@ -4,6 +4,7 @@ export * from './types.js';
 export * from './registry.js';
 export * from './workers-ai.js';
 export * from './models-dev.js';
+export * from './catalog.js';
 export * from './openai-compat.js';
 export * from './openrouter.js';
 export * from './openai.js';
