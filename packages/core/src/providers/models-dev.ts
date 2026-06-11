@@ -112,15 +112,35 @@ export async function listModelsDevProviders(
 }
 
 /**
+ * models.dev omits `api` for providers whose npm SDK embeds the endpoint
+ * (`@ai-sdk/groq`, `@ai-sdk/mistral`, …) — SDKs a Worker cannot load. These
+ * providers all publish a stable, documented OpenAI-compatible endpoint, so
+ * the major ones are pinned here. Only consulted when the catalog itself
+ * offers no usable `api`; keys must exist in models.dev to take effect.
+ */
+const COMPAT_ENDPOINT_SUPPLEMENT: Record<string, string> = {
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  groq: 'https://api.groq.com/openai/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  xai: 'https://api.x.ai/v1',
+  togetherai: 'https://api.together.xyz/v1',
+  deepinfra: 'https://api.deepinfra.com/v1/openai',
+  cerebras: 'https://api.cerebras.ai/v1',
+  perplexity: 'https://api.perplexity.ai',
+  cohere: 'https://api.cohere.ai/compatibility/v1',
+};
+
+/**
  * The base URL Proteus can drive with a plain API key through the
  * openai-compat path, or null when the provider needs a bespoke SDK
  * (`npm` is not an OpenAI-surface package) or an endpoint Proteus cannot
  * construct (no `api`, or an `api` with `${…}` account placeholders).
  */
 export function modelsDevCompatBaseURL(provider: ModelsDevProviderInfo): string | null {
-  if (!provider.api || provider.api.includes('${')) return null;
-  if (provider.npm !== '@ai-sdk/openai-compatible' && provider.npm !== '@ai-sdk/openai') return null;
-  return provider.api;
+  const catalogEligible = provider.api && !provider.api.includes('${')
+    && (provider.npm === '@ai-sdk/openai-compatible' || provider.npm === '@ai-sdk/openai');
+  if (catalogEligible) return provider.api ?? null;
+  return COMPAT_ENDPOINT_SUPPLEMENT[provider.id] ?? null;
 }
 
 async function getModelsDevCatalog(fetchFn: typeof fetch | undefined, ttlMs: number): Promise<Record<string, ModelsDevProvider>> {

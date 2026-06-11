@@ -34,7 +34,15 @@ const CATALOG = {
     api: 'https://api.openai.com/v1',
     models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5', tool_call: true } },
   },
-  // Bespoke-SDK provider with no API endpoint — not key-satisfiable.
+  // Bespoke-SDK provider with no API endpoint and no known compat endpoint
+  // — not key-satisfiable.
+  'sap-ai-core': {
+    id: 'sap-ai-core', name: 'SAP AI Core', doc: 'https://help.sap.com',
+    env: ['SAP_AI_CORE_KEY'], npm: '@jerome-benoit/sap-ai-provider-v2',
+    models: { 'sap-model': { id: 'sap-model', name: 'SAP Model', tool_call: true } },
+  },
+  // Bespoke-SDK provider with no `api` but a documented OpenAI-compatible
+  // endpoint pinned in the supplement.
   mistral: {
     id: 'mistral', name: 'Mistral', doc: 'https://docs.mistral.ai',
     env: ['MISTRAL_API_KEY'], npm: '@ai-sdk/mistral',
@@ -98,7 +106,7 @@ describe('models.dev provider metadata', () => {
   test('listModelsDevProviders returns every catalog provider', async () => {
     const mock = catalogMock();
     const ids = (await listModelsDevProviders({ fetch: mock.fetch })).map((p) => p.id).sort();
-    expect(ids).toEqual(['cloudflare-workers-ai', 'groq', 'mistral', 'openai']);
+    expect(ids).toEqual(['cloudflare-workers-ai', 'groq', 'mistral', 'openai', 'sap-ai-core']);
   });
 
   test('modelsDevCompatBaseURL — key-satisfiable OpenAI-surface endpoints only', async () => {
@@ -106,7 +114,9 @@ describe('models.dev provider metadata', () => {
     const byId = new Map((await listModelsDevProviders({ fetch: mock.fetch })).map((p) => [p.id, p]));
     expect(modelsDevCompatBaseURL(byId.get('groq')!)).toBe('https://api.groq.com/openai/v1');
     expect(modelsDevCompatBaseURL(byId.get('openai')!)).toBe('https://api.openai.com/v1');
-    expect(modelsDevCompatBaseURL(byId.get('mistral')!)).toBeNull();          // bespoke SDK, no api
+    // bespoke SDK + no api, but a pinned OpenAI-compatible endpoint exists
+    expect(modelsDevCompatBaseURL(byId.get('mistral')!)).toBe('https://api.mistral.ai/v1');
+    expect(modelsDevCompatBaseURL(byId.get('sap-ai-core')!)).toBeNull();           // bespoke SDK, no endpoint
     expect(modelsDevCompatBaseURL(byId.get('cloudflare-workers-ai')!)).toBeNull(); // ${…} template
   });
 });
@@ -117,10 +127,10 @@ describe('models.dev dynamic catalog source', () => {
     const source = createModelsDevCatalogSource();
     const deps = makeDeps({
       [catalogCredKey('groq')]: { headers: { Authorization: 'Bearer gsk' } },
-      [catalogCredKey('mistral')]: { headers: { Authorization: 'Bearer msk' } },  // not satisfiable
-      'codex.oauth': { headers: {} },                                             // not a .bearer key
-      'openai-compat.groq': { headers: {}, baseURL: 'https://x' },                // openai-compat namespace
-      [catalogCredKey('unlisted')]: { headers: { Authorization: 'Bearer x' } },   // not in catalog
+      [catalogCredKey('sap-ai-core')]: { headers: { Authorization: 'Bearer sk' } }, // not satisfiable
+      'codex.oauth': { headers: {} },                                              // not a .bearer key
+      'openai-compat.groq': { headers: {}, baseURL: 'https://x' },                 // openai-compat namespace
+      [catalogCredKey('unlisted')]: { headers: { Authorization: 'Bearer x' } },    // not in catalog
     }, mock.fetch);
     expect(await source.listIds(deps)).toEqual(['groq']);
   });

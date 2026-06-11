@@ -62,13 +62,14 @@ describe('buildProviderCatalog', () => {
     { id: 'groq', name: 'Groq', doc: 'https://console.groq.com/docs/models', env: ['GROQ_API_KEY'], npm: '@ai-sdk/openai-compatible', api: 'https://api.groq.com/openai/v1' },
     { id: 'anthropic', name: 'Anthropic', doc: 'https://docs.anthropic.com', env: ['ANTHROPIC_API_KEY'], npm: '@ai-sdk/anthropic' },
     { id: 'mistral', name: 'Mistral', doc: 'https://docs.mistral.ai', env: ['MISTRAL_API_KEY'], npm: '@ai-sdk/mistral' },
+    { id: 'sap-ai-core', name: 'SAP AI Core', doc: 'https://help.sap.com', env: ['SAP_AI_CORE_KEY'], npm: '@jerome-benoit/sap-ai-provider-v2' },
     { id: 'cloudflare-workers-ai', name: 'Cloudflare Workers AI', env: ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_KEY'], npm: '@ai-sdk/openai-compatible', api: 'https://api.cloudflare.com/${CLOUDFLARE_ACCOUNT_ID}/v1' },
   ];
   const staticIds = new Set(['workers-ai', 'ai-gateway', 'codex', 'openai', 'anthropic', 'openrouter', 'openai-compat']);
 
-  test('includes compat-path providers and bespoke-served catalog ids only', () => {
+  test('includes compat-path providers (catalog api or pinned endpoint) and bespoke-served ids only', () => {
     const entries = buildProviderCatalog(providers, staticIds, new Set());
-    expect(entries.map((e) => e.id).sort()).toEqual(['anthropic', 'groq']);
+    expect(entries.map((e) => e.id).sort()).toEqual(['anthropic', 'groq', 'mistral']);
   });
 
   test('entries carry credKey, docs, env var, and connected state; connected sort first', () => {
