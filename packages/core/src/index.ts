@@ -228,7 +228,7 @@ export { diversityDirective, diversityAngle, siblingAngles } from './mcts/divers
 // Test-based convergence tie-break over near-tied candidates.
 export { selectWinnerByTest, type TestSelectionDeps } from './mcts/test-selection.js';
 export {
-  evaluateWithMultiModelJudging,
+  evaluateWithMultiModelJudging, median,
   type EvaluateBranchOptions, type BranchEvaluation,
 } from './mcts/evaluation.js';
 // Process Reward Models — step-level scoring. Unwired until branches gain
@@ -243,9 +243,9 @@ export {
   initAlternateTakesTable, captureAlternateTakes, claimAlternateTakesForTurn,
   purgeUnclaimedAlternateTakes,
   listAlternateTakeSets, latestAlternateTakeSet, recordTakePick,
-  recordBranchTakeSet, buildTakeContinuationPrompt, takeEvidence,
+  recordBranchTakeSet, recordHeadsTakeSet, buildTakeContinuationPrompt, takeEvidence,
   type AlternateTakeCandidate, type AlternateTakeSet, type AlternateTakeSource,
-  type TakePickRecord, type TakePickOutcome,
+  type HeadTakeCandidate, type TakePickRecord, type TakePickOutcome,
 } from './mcts/takes.js';
 // Steer-as-Branch — a mid-turn redirect run as a parallel head that settles
 // into the Alternate Takes pipeline against the live turn's answer.
@@ -489,7 +489,7 @@ export type {
   HeadId, HeadBudget, HeadInput, HeadReport,
   HeadStep, HeadStepToolCall, HeadRunView, HeadRunHeadView,
   Evidence, Decision, ArtifactRef,
-  SplitRequest, MergeResult, MergeStrategy,
+  SplitRequest, MergeResult, HeadScore, MergeStrategy,
   BudgetSplit, SerializedMessage,
 } from './heads/index.js';
 export {
@@ -497,7 +497,7 @@ export {
   deriveChildBudget, budgetExhausted,
   initHeadsTables,
   HeadJournal, type HeadJournalRow,
-  HeadController, type HeadRuntime, type SpawnedHead, type MergeLLMFn,
+  HeadController, type HeadRuntime, type HeadGrounding, type SpawnedHead, type MergeLLMFn,
   type SplitPhaseEvent,
   MergeOutputSchema, EvidenceItemSchema, DecisionSchema, type MergeOutput,
   extractHeadSteps, extractFinalText, synthesizeHeadSummary,
