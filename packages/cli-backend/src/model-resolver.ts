@@ -25,6 +25,7 @@ import type { OAuthCredential } from '@proteus/core';
 import { generateText, streamText } from 'ai';
 import type { LanguageModel } from 'ai';
 import type { LLM } from '@proteus/core';
+import { createClaudeCliProvider, type ClaudeCliProviderOptions } from './claude-cli-provider.js';
 import type { LocalCodexAuthStore } from './codex-auth-store.js';
 
 export interface LocalOpenAICompatCredential {
@@ -76,6 +77,10 @@ export interface LocalModelResolverConfig {
   cloud?: LocalCloudSession;
   fetch?: typeof fetch;
   onCodexRefresh?: (credential: OAuthCredential) => void;
+  /** Seams for the local Claude-subscription provider (tests inject a fake
+   *  `claude` binary). Production leaves this undefined — the provider spawns
+   *  the real binary and probes `claude auth status`. */
+  claudeCli?: ClaudeCliProviderOptions;
 }
 
 export function createLocalProviderLLM(opts: LocalModelResolverConfig): LLM {
@@ -176,6 +181,7 @@ export function createLocalModelResolver(opts: LocalModelResolverConfig): LocalM
     registry.register(createSignedOutCloudProvider('my-gateway', 'Your AI Gateway'));
   }
 
+  registry.register(createClaudeCliProvider(opts.claudeCli));
   registry.register(createCodexProvider());
   registry.register(createOpenAIProvider());
   registry.register(createAnthropicProvider());
