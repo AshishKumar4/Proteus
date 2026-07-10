@@ -185,6 +185,13 @@ export interface DerivedFields {
 export function deriveFields(d: IngressDescriptor): DerivedFields {
   const trust = deriveEventTrust(d);
   const priority = derivePriority(trust, d.variant);
-  const payload_visibility = deriveDefaultVisibility(trust);
+  // Email bodies ARE the turn input, and every email sender passed an
+  // explicit owner grant (own address or the email_route allowlist) — the
+  // per-trigger visibility override the spec allows. `redact` keeps content
+  // readable while masking secret-shaped fields; execution stays gated by
+  // trust regardless. Everything else keeps the per-trust default.
+  const payload_visibility = d.ingress === 'email_inbound'
+    ? 'redact'
+    : deriveDefaultVisibility(trust);
   return { trust, priority, payload_visibility };
 }

@@ -67,8 +67,12 @@ describe('email trust + priority derivation', () => {
     expect(deriveFields(emailDescriptor('owner'))).toEqual({
       trust: 'authenticated', priority: 'normal', payload_visibility: 'redact',
     });
+    // Allowlisted senders run at external trust, but the body stays readable
+    // ('redact', not the external default 'hash') — the allowlist is an
+    // explicit owner grant and the body is the turn input. Execution is
+    // still gated by the external trust.
     expect(deriveFields(emailDescriptor('allowlisted'))).toEqual({
-      trust: 'external', priority: 'background', payload_visibility: 'hash',
+      trust: 'external', priority: 'background', payload_visibility: 'redact',
     });
   });
 });
