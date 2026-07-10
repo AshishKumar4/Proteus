@@ -226,7 +226,12 @@ export class PeerHub {
     const result = await receivePeerMessage({
       log: this.deps.log,
       isSameOwner: (uid) => this.deps.isSameOwner(uid),
-      hasGrant: (agent, uid) => this.deps.hasGrant(agent, uid),
+      // A reply correlated to an ask THIS agent delivered to THAT sender is
+      // implicitly accepted — asking is consenting to the answer. Without
+      // this, a cross-owner ask could never complete (the answer would need
+      // a reciprocal grant on the asker's side and dead-letter instead).
+      hasGrant: async (agent, uid) =>
+        (await this.deps.hasGrant(agent, uid)) || this.isReplyToMyAsk(msg),
       openPeerBackChannel: (event_id, m) => {
         const holder: PeerBackHolder = {
           agent_name: m.sender_agent_name,
@@ -253,6 +258,29 @@ export class PeerHub {
       }
     }
     return result;
+  }
+
+  /** True iff `msg` is a reply envelope whose `in_reply_to` names an ask this
+   *  agent DELIVERED to exactly this sender. The outbox ULID is only known to
+   *  that receiver, so the correlation is unforgeable by third parties. */
+  private isReplyToMyAsk(msg: PeerMessage): boolean {
+    if (msg.topic !== PEER_REPLY_TOPIC) return false;
+    const body = (msg.body ?? null) as { in_reply_to?: unknown } | null;
+    const askId = typeof body?.in_reply_to === 'string' ? body.in_reply_to : null;
+    if (!askId) return false;
+    const rows = this.deps.sql.exec(
+      `SELECT receiver_agent_name, receiver_user_id, payload
+       FROM peer_outbox WHERE id = ? AND state = 'delivered'`, askId,
+    ).toArray() as Array<{ receiver_agent_name: string; receiver_user_id: string; payload: string }>;
+    const row = rows[0];
+    if (!row) return false;
+    if (row.receiver_agent_name !== msg.sender_agent_name) return false;
+    if (row.receiver_user_id !== msg.sender_user_id) return false;
+    try {
+      return (JSON.parse(row.payload) as { reply_expected?: boolean }).reply_expected === true;
+    } catch {
+      return false;
+    }
   }
 
   /** Match a transport reply envelope to a live ask waiter. */

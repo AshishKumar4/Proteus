@@ -192,6 +192,43 @@ describe('trust-grant enforcement (cross-owner)', () => {
     expect(outboxRows(mallory)[0].state).toBe('dlq');
   });
 
+  test('a cross-owner ask completes on a ONE-directional grant — the answer is implicitly accepted', async () => {
+    const { addAgent } = makeNetwork();
+    const alice = addAgent('alice', userA);
+    const carol = addAgent('carol', userB);
+    alice.grants.add(`${userB}:carol`);   // alice accepts carol; carol grants nothing
+
+    const askPromise = carol.hub.ask({
+      agent: 'alice', userId: userA, topic: 'question', message: 'What is your uptime?', timeoutMs: 2_000,
+    });
+    await Bun.sleep(0);
+    const events = pendingPeerEvents(alice);
+    expect(events).toHaveLength(1);
+    await alice.hub.reply({ eventId: events[0].id, message: '99.99%' });
+
+    // Without the reply-to-my-ask correlation this would dead-letter on
+    // carol's side (no grant for alice) and the ask could never complete.
+    expect(await askPromise).toEqual({ status: 'replied', from: 'alice', reply: '99.99%' });
+    expect(outboxRows(alice).map((r) => r.state)).toEqual(['delivered']);
+  });
+
+  test('an uncorrelated cross-owner "reply" envelope is still rejected (no forged replies)', async () => {
+    const { addAgent } = makeNetwork();
+    const alice = addAgent('alice', userA);
+
+    // Alice never delivered an ask to "mallory"; a forged reply envelope with
+    // a guessed id must hit the normal default-deny grant path.
+    const result = await alice.hub.receive({
+      sender_event_id: 'forged-1',
+      sender_agent_name: 'mallory',
+      sender_user_id: userB,
+      topic: 'peer_reply',
+      body: { in_reply_to: 'no-such-ask', content: 'gotcha' },
+    });
+    expect(result).toEqual({ admitted: false, reason: 'no grant from receiver for cross-owner sender' });
+    expect(pendingPeerEvents(alice)).toHaveLength(0);
+  });
+
   test('a granted cross-owner sender is admitted at external trust / background priority', async () => {
     const { addAgent } = makeNetwork();
     const alice = addAgent('alice', userA);
