@@ -5026,10 +5026,14 @@ export class OrchestratorAgent extends Think<Env> {
   }
 
   /** Fire-and-forget owner email. `email_notifications='false'` silences it;
-   *  missing platform pieces (binding / domain / owner email) skip quietly. */
+   *  missing platform pieces (binding / domain / owner email) skip quietly.
+   *  Also skipped while an operator socket is live — the owner sees the
+   *  card in-app; email is the away channel, not a duplicate feed. */
   private emailOwnerNotification(subject: string, text: string): void {
-    try { if (!this.config.getEmailNotificationsEnabled()) return; }
-    catch { return; }
+    try {
+      if (!this.config.getEmailNotificationsEnabled()) return;
+      if (this.ctx.getWebSockets().length > 0) return;
+    } catch { return; }
     void (async () => {
       await sendOwnerEmail({
         email: this.env.EMAIL,
