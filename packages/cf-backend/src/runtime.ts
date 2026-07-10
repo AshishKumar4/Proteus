@@ -21,6 +21,7 @@ import type {
   FiberCtx, ExecutionRouter,
 } from "@proteus/core";
 import {
+  CompositeVFS,
   DefaultExecutionRouter, createInlineExecutor,
   createSandboxExecutor, createSSHTunnelExecutor, type DeviceTransport,
   createNimbusExecutor, type NimbusSandboxHandle,
@@ -84,6 +85,9 @@ function userDOStubFor(agent: AgentHost): DurableObjectStub<UserDO> | null {
  *  backed vector store for semantic memory. */
 export type CFRuntime = AgentRuntime & {
   sqliteFS: SqliteFS;
+  /** Storage.vfs, typed — the mount-table data surface (listMounts) for the
+   *  file-manager UI and cross-environment copy. */
+  compositeVfs: CompositeVFS;
   /** The laptop runtime's hub transport. `refreshStatus()` is awaited at turn
    *  start so the turn's context reflects the CURRENT device state. */
   deviceTransport: DeviceTransport;
@@ -123,8 +127,11 @@ export function createCFRuntime(agent: AgentHost, hooks: CFRuntimeHooks = {}): C
   const craftStoreImpl = new AgentUtilsCraftStore(sql);
   craftStoreImpl.ensureSchema();
 
-  // Adapt SqliteFS to core's VFS interface (SqliteFS has a superset of methods)
-  const vfs = adaptVFS(sqliteFS);
+  // Storage.vfs is the CompositeVFS mount table; /local is SqliteFS adapted
+  // to core's VFS interface (SqliteFS has a superset of methods). Dynamic
+  // mounts (/sandbox, /nimbus, /pc) attach below once their handles exist.
+  const compositeVfs = new CompositeVFS({ local: adaptVFS(sqliteFS) });
+  const vfs: CoreVFS = compositeVfs;
 
   // Adapt MemoryStore to core's Memory interface
   const memory = adaptMemory(memoryStore);
@@ -255,6 +262,7 @@ export function createCFRuntime(agent: AgentHost, hooks: CFRuntimeHooks = {}): C
     executionRouter,
     shell,
     sqliteFS,
+    compositeVfs,
     deviceTransport,
     vectorStore,
     sandboxHandle,
