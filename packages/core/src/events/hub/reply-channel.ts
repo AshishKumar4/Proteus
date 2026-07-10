@@ -116,17 +116,6 @@ export class ReplyChannelStore {
     };
   }
 
-  /** The open channel bound to an event, or null. Newest first when an event
-   *  somehow carries more than one. */
-  findOpenByEvent(eventId: EventId): ReplyChannelRow | null {
-    const rows = this.sql.exec(
-      `SELECT id FROM reply_channels
-       WHERE event_id = ? AND state = 'open'
-       ORDER BY created_at DESC LIMIT 1`, eventId,
-    ).toArray() as Array<{ id: string }>;
-    return rows.length > 0 ? this.get(rows[0].id) : null;
-  }
-
   /** Re-point a channel at its real event id (channels are opened before
    *  publish so the event row can carry the ref). */
   bindEvent(id: ReplyChannelId, eventId: EventId): void {
