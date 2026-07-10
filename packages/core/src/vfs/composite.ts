@@ -76,7 +76,7 @@ export interface VfsError extends Error {
 }
 
 const ERRNO: Record<string, number> = {
-  ENOENT: -2, EACCES: -13, EEXIST: -17, ENOTDIR: -20, EISDIR: -21, EROFS: -30, ENXIO: -6,
+  EPERM: -1, ENOENT: -2, ENXIO: -6, EACCES: -13, EEXIST: -17, ENOTDIR: -20, EISDIR: -21, EROFS: -30,
 };
 
 /** Errno-style error shared by the composite and its mount adapters. */
@@ -114,7 +114,7 @@ export type ResolvedPath =
   /** A reserved/registered mount that is not currently available. */
   | { kind: 'unavailable'; name: string; reason: string }
   /** A path inside a mount; `sub` is the environment-native path. */
-  | { kind: 'mount'; name: string; vfs: VFS; policy: MountPolicy; sub: string };
+  | { kind: 'mount'; name: string; vfs: VFS; policy: MountPolicy; sub: string; isMountRoot: boolean };
 
 const NAME_RE = /^[a-z][a-z0-9_-]*$/;
 
@@ -179,17 +179,19 @@ export class CompositeVFS implements VFS {
   }
 
   /**
-   * The resolve algorithm. Mount names are reserved top-level identifiers,
-   * matched on segment boundaries ('/sandboxes/x' does NOT hit '/sandbox');
-   * everything else compat-routes to /local.
+   * The resolve algorithm. '/' is the synthetic read-only mount table; mount
+   * names are reserved top-level identifiers, matched on segment boundaries
+   * ('/sandboxes/x' does NOT hit '/sandbox'). Bare and deeper-absolute
+   * non-mount paths compat-route to /local; a single top-level non-mount
+   * segment is an entry of the synthetic root itself.
    */
   resolve(path: string): ResolvedPath {
     const abs = cleanAbsolutePath(path.startsWith('/') ? path : `${this.cwd}/${path}`);
-    const local = this.rows.get('local') as Extract<MountRow, { kind: 'mount' }>;
+    if (abs === '/') return { kind: 'root' };
     const slash = abs.indexOf('/', 1);
     const seg0 = slash === -1 ? abs.slice(1) : abs.slice(1, slash);
     const rest = slash === -1 ? '' : abs.slice(slash);
-    const row = seg0 ? this.rows.get(seg0) : undefined;
+    const row = this.rows.get(seg0);
     if (row) {
       if (row.kind === 'reserved') return { kind: 'unavailable', name: seg0, reason: row.reason };
       if (!row.live()) {
@@ -198,70 +200,117 @@ export class CompositeVFS implements VFS {
           reason: `the ${seg0} environment is not available right now`,
         };
       }
-      return { kind: 'mount', name: seg0, vfs: row.vfs, policy: row.policy, sub: envPath(row.policy.rootPath, rest) };
+      return {
+        kind: 'mount', name: seg0, vfs: row.vfs, policy: row.policy,
+        sub: envPath(row.policy.rootPath, rest), isMountRoot: rest === '',
+      };
     }
+    if (rest === '') return { kind: 'rootEntry', name: seg0 };
     // COMPAT: bare and deeper-absolute non-mount paths belong to /local.
-    return { kind: 'mount', name: 'local', vfs: local.vfs, policy: local.policy, sub: envPath(local.policy.rootPath, abs) };
+    const local = this.rows.get('local') as Extract<MountRow, { kind: 'mount' }>;
+    return {
+      kind: 'mount', name: 'local', vfs: local.vfs, policy: local.policy,
+      sub: envPath(local.policy.rootPath, abs), isMountRoot: false,
+    };
   }
 
   // ── The 7 VFS methods ─────────────────────────────────────────────
 
   async readFile(path: string, opts?: { encoding?: string }): Promise<Uint8Array | string> {
-    const r = this.demandMount(path, 'open');
+    const r = this.demandResolved(path, 'open');
+    if (r.kind === 'root') throw makeVfsError('EISDIR', `illegal operation on a directory, open '${path}'`, path);
+    if (r.kind === 'rootEntry') throw makeVfsError('ENOENT', `no such file or directory, open '${path}'`, path);
     return r.vfs.readFile(r.sub, opts);
   }
 
   async writeFile(path: string, data: string | Uint8Array): Promise<void> {
-    const r = this.demandMount(path, 'open');
+    const r = this.demandResolved(path, 'open');
+    if (r.kind === 'root') throw makeVfsError('EISDIR', `illegal operation on a directory, open '${path}'`, path);
+    if (r.kind === 'rootEntry') throw this.rootTableError(path);
+    if (r.isMountRoot) throw makeVfsError('EISDIR', `illegal operation on a directory, open '${path}'`, path);
     this.assertWritable(r, path);
+    this.assertNameNotReserved(r, 'open', path);
     return r.vfs.writeFile(r.sub, data);
   }
 
   async readdir(path: string): Promise<string[]> {
-    const r = this.demandMount(path, 'scandir');
+    const r = this.demandResolved(path, 'scandir');
+    if (r.kind === 'root') {
+      return [...this.rows.entries()]
+        .filter(([, row]) => row.kind === 'mount' && row.live())
+        .map(([name]) => name);
+    }
+    if (r.kind === 'rootEntry') throw makeVfsError('ENOENT', `no such file or directory, scandir '${path}'`, path);
     return r.vfs.readdir(r.sub);
   }
 
   async stat(path: string): Promise<{ size: number; mtime: number; isDir: boolean } | null> {
-    const r = this.demandMount(path, 'stat');
+    const r = this.demandResolved(path, 'stat');
+    if (r.kind === 'root') return { size: 0, mtime: 0, isDir: true };
+    if (r.kind === 'rootEntry') return null;
     return r.vfs.stat(r.sub);
   }
 
   async unlink(path: string): Promise<void> {
-    const r = this.demandMount(path, 'unlink');
+    const r = this.demandResolved(path, 'unlink');
+    if (r.kind === 'root') throw makeVfsError('EPERM', `operation not permitted, unlink '${path}'`, path);
+    if (r.kind === 'rootEntry') throw this.rootTableError(path);
+    if (r.isMountRoot) throw makeVfsError('EPERM', `cannot unlink the /${r.name} mount, unlink '${path}'`, path);
     this.assertWritable(r, path);
     return r.vfs.unlink(r.sub);
   }
 
   async mkdir(path: string, opts?: { recursive?: boolean }): Promise<void> {
-    const r = this.demandMount(path, 'mkdir');
+    const r = this.demandResolved(path, 'mkdir');
+    if (r.kind === 'root') return; // '/' always exists
+    if (r.kind === 'rootEntry') throw this.rootTableError(path);
+    if (r.isMountRoot) return; // the mount root always exists as a directory
     this.assertWritable(r, path);
+    this.assertNameNotReserved(r, 'mkdir', path);
     return r.vfs.mkdir(r.sub, opts);
   }
 
   async exists(path: string): Promise<boolean> {
     const r = this.resolve(path);
+    if (r.kind === 'root') return true;
     if (r.kind !== 'mount') return false;
     return r.vfs.exists(r.sub);
   }
 
   // ── internals ─────────────────────────────────────────────────────
 
-  private demandMount(path: string, op: string): Extract<ResolvedPath, { kind: 'mount' }> {
+  private demandResolved(path: string, op: string): Exclude<ResolvedPath, { kind: 'unavailable' }> {
     const r = this.resolve(path);
     if (r.kind === 'unavailable') {
       throw makeVfsError('ENXIO', `/${r.name} is not available (${r.reason}), ${op} '${path}'`, path);
     }
-    if (r.kind !== 'mount') {
-      // Phase 0: unreachable — resolve() compat-routes everything to a mount.
-      throw makeVfsError('ENOENT', `no such file or directory, ${op} '${path}'`, path);
-    }
     return r;
+  }
+
+  private rootTableError(path: string): VfsError {
+    return makeVfsError(
+      'EROFS',
+      `'/' is the workspace mount table; write under a mount (e.g. /local/x), '${path}'`,
+      path,
+    );
   }
 
   private assertWritable(r: Extract<ResolvedPath, { kind: 'mount' }>, path: string): void {
     if (r.policy.readOnly) {
       throw makeVfsError('EROFS', `/${r.name} is a read-only mount, write '${path}'`, path);
+    }
+  }
+
+  /**
+   * The residual shadowing collision: a top-level /local entry named like a
+   * LIVE mount would read as a sibling of that mount in the owner's mental
+   * model. Rejected at create time; the name frees up if the mount unmounts.
+   */
+  private assertNameNotReserved(r: Extract<ResolvedPath, { kind: 'mount' }>, op: string, path: string): void {
+    if (r.name !== 'local' || r.sub.includes('/')) return;
+    const row = this.rows.get(r.sub);
+    if (row?.kind === 'mount' && row.live()) {
+      throw makeVfsError('EEXIST', `name reserved for the ${r.sub} mount, ${op} '${path}'`, path);
     }
   }
 
