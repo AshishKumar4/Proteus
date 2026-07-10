@@ -91,6 +91,13 @@ export function deriveEventTrust(d: IngressDescriptor): TrustLevel {
       if (d.variant === 'mcp_chat') return 'owner';
       return 'authenticated';
 
+    case 'email_inbound':
+      // Email sender identity rests on envelope + DMARC checks upstream —
+      // weaker than an authenticated browser session, so even the owner's
+      // verified address is capped at `authenticated` (never `owner`).
+      // Allowlisted third-party senders run at `external`.
+      return d.sender_class === 'owner' ? 'authenticated' : 'external';
+
     case 'self_emit':
       return meetTrust('self', d.emitting_head_trust);
 
@@ -131,11 +138,13 @@ export function derivePriority(trust: TrustLevel, variant: EventVariant): Priori
       mcp_third_party: 'normal',
       reply_request: 'normal',
       internal: 'normal',
+      email: 'normal',
     },
     external: {
       webhook: 'background',
       peer_agent: 'background',
       mcp_third_party: 'background',
+      email: 'background',
     },
   };
   const row = table[trust];
