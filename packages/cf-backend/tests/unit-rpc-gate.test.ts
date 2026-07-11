@@ -47,7 +47,7 @@ describe('connect-ticket scope tags', () => {
   test('an unparseable scope header fails closed, never open', () => {
     const tag = cliScopesConnectionTag('totally-bogus')!;
     expect(cliScopesFromTags([tag])).toEqual([]);
-    expect(rejectOutOfScopeRpc([tag], rpcFrame('getEvolutionChangelog'))).not.toBeNull();
+    expect(rejectOutOfScopeRpc([tag], rpcFrame('getAgentStatus'))).not.toBeNull();
   });
 });
 
@@ -115,11 +115,25 @@ describe('rpc gate on scoped connections', () => {
   });
 
   test('read RPCs are scope-checked: exec-only tokens get a typed rejection', () => {
-    const rejection = rejectOutOfScopeRpc(EXEC_ONLY, rpcFrame('listFileCheckpoints', 'rpc-7'));
+    const rejection = rejectOutOfScopeRpc(EXEC_ONLY, rpcFrame('getMemoryContent', 'rpc-7'));
     expect(rejection).not.toBeNull();
     const frame = JSON.parse(rejection!);
     expect(frame).toMatchObject({ type: 'rpc', id: 'rpc-7', success: false });
     expect(frame.error).toContain('workspace.read');
+  });
+
+  test('the old websocket-read-allowlist methods are interactive-only now — a read+exec scoped token cannot reach them (no read-only widening)', () => {
+    for (const method of [
+      'checkpointStatus', 'getEvolutionChangelog', 'getWorkspaceAgents',
+      'latestAlternateTakes', 'listFileCheckpoints', 'listMounts', 'planFileRestore',
+    ]) {
+      expect(AGENT_RPC_ACCESS[method as keyof typeof AGENT_RPC_ACCESS]).toBe('interactive');
+      // Denied to a read-only token (the regression this guards) AND to a
+      // read+exec token (the strict, non-widening approximation of the old
+      // "needs read allowlist + exec to open the socket" requirement).
+      expect(rejectOutOfScopeRpc([cliScopesConnectionTag('workspace.read')!], rpcFrame(method))).not.toBeNull();
+      expect(rejectOutOfScopeRpc(READ_EXEC, rpcFrame(method))).not.toBeNull();
+    }
   });
 
   test('mutating @callables are rejected with a typed rpc error frame', () => {

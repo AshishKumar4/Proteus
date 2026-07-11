@@ -45,20 +45,34 @@ const CLI_SCOPES_TAG_PREFIX = 'cli-scopes:';
 export type AgentRpcAccess = AccessTokenScope | 'interactive' | 'never';
 
 /**
- * Every remotely invokable OrchestratorAgent method → its access class.
- * The scope assignments preserve the pre-unification policy exactly: reads
- * the REST router served under GET /workspaces/:name/* (plus the old
- * websocket read allowlist) carry workspace.read, the two run-a-task
- * surfaces (POST /stop, executor exec) carry workspace.exec, and everything
- * else — consent decisions, model changes, trigger management, scaffold
- * levers, fork/revert/restore — stays interactive-session-only.
+ * Every remotely invokable OrchestratorAgent method → its access class,
+ * preserving the pre-unification per-token-shape reachability:
+ *   • workspace.read — the reads the REST router served under
+ *     GET /workspaces/:name/*, reachable by a read-only scoped token before;
+ *   • workspace.exec — the two run-a-task surfaces (POST /stop, executor
+ *     exec), reachable by an exec scoped token before;
+ *   • interactive — session-only, incl. the methods that were reachable by a
+ *     scoped token on NO transport before (see the note below).
+ *
+ * The seven methods that used to live in the old websocket read allowlist
+ * (checkpointStatus, getEvolutionChangelog, getWorkspaceAgents,
+ * latestAlternateTakes, listFileCheckpoints, listMounts, planFileRestore)
+ * are 'interactive', NOT workspace.read. In the old system their only
+ * transport was the agent websocket, and opening that socket required a
+ * connect-ticket — which requires workspace.exec. So a read-only scoped
+ * token could reach them on no transport at all; classing them
+ * workspace.read here would newly expose them to read-only tokens. No single
+ * scope reproduces the old "needs read (allowlist) AND exec (to open the
+ * socket)" requirement, so we take the strict, non-widening approximation:
+ * scoped tokens are denied them on every transport (session tokens, which
+ * carry no scope tag, are unaffected — the interactive CLI and the browser
+ * keep full access). The interactive WS session and browser are the only
+ * real callers of these, so nothing ships broken.
  */
 export const AGENT_RPC_ACCESS = {
-  // ── Reads a workspace.read token may perform ──
-  checkpointStatus: 'workspace.read',
+  // ── Reads a workspace.read token may perform (old GET /workspaces/:name/*) ──
   getAgentStatus: 'workspace.read',
   getChatHistory: 'workspace.read',
-  getEvolutionChangelog: 'workspace.read',
   getExecutors: 'workspace.read',
   getGepaRun: 'workspace.read',
   getGepaRuns: 'workspace.read',
@@ -70,16 +84,11 @@ export const AGENT_RPC_ACCESS = {
   getRunTimeline: 'workspace.read',
   getStoredModelSpec: 'workspace.read',
   getToolDescriptions: 'workspace.read',
-  getWorkspaceAgents: 'workspace.read',
   getWorkspaceSnapshot: 'workspace.read',
-  latestAlternateTakes: 'workspace.read',
   listBackgroundJobs: 'workspace.read',
-  listFileCheckpoints: 'workspace.read',
-  listMounts: 'workspace.read',
   listPendingConsents: 'workspace.read',
   listRecentEvents: 'workspace.read',
   listTriggers: 'workspace.read',
-  planFileRestore: 'workspace.read',
   searchMemoryHybrid: 'workspace.read',
 
   // ── Run-a-task surfaces a workspace.exec token may perform ──
@@ -91,6 +100,16 @@ export const AGENT_RPC_ACCESS = {
   branchTurn: 'interactive',
   cancelBackgroundJob: 'interactive',
   cancelTrigger: 'interactive',
+  // The seven old-websocket-read-allowlist methods — 'interactive', not
+  // workspace.read: reachable only over an exec-gated socket before (see the
+  // block comment above).
+  checkpointStatus: 'interactive',
+  getEvolutionChangelog: 'interactive',
+  getWorkspaceAgents: 'interactive',
+  latestAlternateTakes: 'interactive',
+  listFileCheckpoints: 'interactive',
+  listMounts: 'interactive',
+  planFileRestore: 'interactive',
   clearBackgroundJobs: 'interactive',
   createProductChange: 'interactive',
   createTimerTrigger: 'interactive',
