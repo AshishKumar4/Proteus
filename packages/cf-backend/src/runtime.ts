@@ -128,10 +128,10 @@ export function createCFRuntime(agent: AgentHost, hooks: CFRuntimeHooks = {}): C
   const craftStoreImpl = new AgentUtilsCraftStore(sql);
   craftStoreImpl.ensureSchema();
 
-  // Storage.vfs is the CompositeVFS mount table; /local is SqliteFS adapted
-  // to core's VFS interface (SqliteFS has a superset of methods). Dynamic
+  // Storage.vfs is the CompositeVFS mount table; /local is SqliteFS directly
+  // (it implements the core VFS interface — a superset of methods). Dynamic
   // mounts (/sandbox, /nimbus, /pc) attach below once their handles exist.
-  const compositeVfs = new CompositeVFS({ local: adaptVFS(sqliteFS) });
+  const compositeVfs = new CompositeVFS({ local: sqliteFS });
   const vfs: CoreVFS = compositeVfs;
 
   // Adapt MemoryStore to core's Memory interface
@@ -412,25 +412,6 @@ function createRestoringSandboxHandle(
 }
 
 // ── Adapters: agent-utils → core interfaces ──────────────────────
-
-function adaptVFS(fs: SqliteFS): CoreVFS {
-  return {
-    // SqliteFS narrows encoding to the "utf8" literal; CoreVFS allows any
-    // string. Only "utf8" selects text mode — anything else is binary.
-    readFile: (path, opts) => fs.readFile(path, opts?.encoding === 'utf8' ? { encoding: 'utf8' } : undefined),
-    writeFile: (path, data) => fs.writeFile(path, data),
-    readdir: (path) => fs.readdir(path),
-    async stat(path) {
-      try {
-        const s = await fs.stat(path);
-        return { size: s.size, mtime: s.mtimeMs, isDir: s.type === "dir" };
-      } catch { return null; }
-    },
-    unlink: (path) => fs.unlink(path),
-    mkdir: (path, opts) => fs.mkdir(path, opts),
-    exists: (path) => fs.exists(path),
-  };
-}
 
 function adaptMemory(store: MemoryStore): Memory {
   return {
