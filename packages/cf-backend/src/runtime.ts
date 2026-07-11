@@ -155,7 +155,7 @@ export function createCFRuntime(agent: AgentHost, hooks: CFRuntimeHooks = {}): C
   executionRouter.register(createInlineExecutor({
     vfs, memory, craftStore, shell,
     // sql is used by workspace.listTools() to look up EMA craft_scores.
-    // Cast because adaptVFS returns core's SqlExecutor shape.
+    // Cast bridges the agent SDK's sql binding to core's SqlExecutor shape.
     sql: sql as unknown as import("@proteus/core").SqlExecutor,
     // Optional eager notification; PreambleCraftedExecutor live-reads CraftStore.
     onToolRegistered: hooks.onToolRegistered,
