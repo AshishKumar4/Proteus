@@ -66,8 +66,10 @@ interface ActiveTurn {
 
 /**
  * AgentClient over the OrchestratorAgent DO: chat turns ride the real agent
- * websocket (ticket-authenticated), everything else uses the /api/cli HTTP
- * projection. The DO is the source of truth for chat history and turn
+ * websocket (ticket-authenticated), everything else calls agent methods by
+ * name over the generic /api/cli/workspaces/:name/rpc transport (or the
+ * socket's own {type:'rpc'} frames once it is open). The DO is the source
+ * of truth for chat history and turn
  * execution: each send transmits only the new user message (the server
  * reconciles it into its canonical store and builds model context
  * server-side), so the client never mirrors history.
