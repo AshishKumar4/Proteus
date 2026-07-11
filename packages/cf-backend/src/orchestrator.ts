@@ -17,7 +17,7 @@
  */
 
 import { callable, type AgentContext, type Connection, type ConnectionContext } from "agents";
-import { CLI_SCOPES_HEADER, cliScopesConnectionTag, rejectOutOfScopeRpc } from "./cli/ws-rpc-gate.js";
+import { CLI_SCOPES_HEADER, cliScopesConnectionTag, rejectOutOfScopeRpc } from "./cli/rpc-gate.js";
 import {
   createCompactionExtension, createVfsTranscriptStore,
   createCompactionStateStore, initCompactionStateTable,
