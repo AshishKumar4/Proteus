@@ -132,16 +132,15 @@ function withProviderOptions(message: ModelMessage, providerOptions: ProviderOpt
   }
 }
 
-/** Strip the message-level cache markers this module manages (both marker
- *  namespaces), preserving every unrelated providerOptions field. */
-function withoutCacheMarker(message: ModelMessage): ModelMessage {
-  const po = message.providerOptions;
-  if (!po) return message;
+/** Strip this module's cache markers from a providerOptions bag, preserving
+ *  every unrelated field. Returns the input when nothing had to change. */
+function stripMarkerOptions(po: ProviderOptions | undefined): ProviderOptions | undefined {
+  if (!po) return po;
   const anthropic = po.anthropic;
   const compat = po.openaiCompatible;
   const hasAnthropicMarker = anthropic !== undefined && 'cacheControl' in anthropic;
   const hasCompatMarker = compat !== undefined && 'cache_control' in compat;
-  if (!hasAnthropicMarker && !hasCompatMarker) return message;
+  if (!hasAnthropicMarker && !hasCompatMarker) return po;
 
   const next: ProviderOptions = { ...po };
   if (hasAnthropicMarker) {
@@ -152,14 +151,76 @@ function withoutCacheMarker(message: ModelMessage): ModelMessage {
     const { cache_control: _drop, ...rest } = compat;
     if (Object.keys(rest).length > 0) next.openaiCompatible = rest; else delete next.openaiCompatible;
   }
-  return withProviderOptions(message, next);
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
+/** Strip stale cache markers at message level AND content-part level (the
+ *  openaiCompatible namespace marks parts — see withCacheMarker). */
+function withoutCacheMarker(message: ModelMessage): ModelMessage {
+  const strippedPo = stripMarkerOptions(message.providerOptions);
+  const poChanged = strippedPo !== message.providerOptions;
+
+  if (message.role === 'user' && Array.isArray(message.content)) {
+    let partsChanged = false;
+    const parts = message.content.map((part) => {
+      const stripped = stripMarkerOptions(part.providerOptions);
+      if (stripped === part.providerOptions) return part;
+      partsChanged = true;
+      return { ...part, providerOptions: stripped };
+    });
+    if (partsChanged) return { ...message, content: parts, providerOptions: strippedPo };
+  }
+  if (message.role === 'tool') {
+    let partsChanged = false;
+    const parts = message.content.map((part) => {
+      if (part.type !== 'tool-result') return part;
+      const stripped = stripMarkerOptions(part.providerOptions);
+      if (stripped === part.providerOptions) return part;
+      partsChanged = true;
+      return { ...part, providerOptions: stripped };
+    });
+    if (partsChanged) return { ...message, content: parts, providerOptions: strippedPo };
+  }
+  if (!poChanged) return message;
+  return withProviderOptions(message, strippedPo);
+}
+
+function mergeMarker(po: ProviderOptions | undefined, ns: 'anthropic' | 'openaiCompatible'): ProviderOptions {
+  const merged: ProviderOptions = { ...po };
+  merged[ns] = { ...merged[ns], ...markerOptions(ns)[ns] };
+  return merged;
+}
+
+/**
+ * Place one cache marker on a message, per namespace convention:
+ * - `anthropic`: message level — @ai-sdk/anthropic applies it to the last
+ *   content block for every role (user / assistant / tool result / system).
+ * - `openaiCompatible`: where the SDK actually reads metadata for the role —
+ *   the LAST content part for user and tool messages (single-text user
+ *   messages collapse back to string content on the wire with the part's
+ *   metadata spread, and tool results only read part metadata), message level
+ *   for system/assistant (spread verbatim into the wire message).
+ */
 function withCacheMarker(message: ModelMessage, ns: 'anthropic' | 'openaiCompatible'): ModelMessage {
-  const marker = markerOptions(ns);
-  const merged: ProviderOptions = { ...message.providerOptions };
-  merged[ns] = { ...merged[ns], ...marker[ns] };
-  return withProviderOptions(message, merged);
+  if (ns === 'openaiCompatible' && message.role === 'user') {
+    const parts = typeof message.content === 'string'
+      ? [{ type: 'text' as const, text: message.content }]
+      : [...message.content];
+    const last = parts[parts.length - 1];
+    if (last !== undefined) {
+      parts[parts.length - 1] = { ...last, providerOptions: mergeMarker(last.providerOptions, ns) };
+      return { ...message, content: parts };
+    }
+  }
+  if (ns === 'openaiCompatible' && message.role === 'tool') {
+    const parts = [...message.content];
+    const last = parts[parts.length - 1];
+    if (last !== undefined && last.type === 'tool-result') {
+      parts[parts.length - 1] = { ...last, providerOptions: mergeMarker(last.providerOptions, ns) };
+      return { ...message, content: parts };
+    }
+  }
+  return withProviderOptions(message, mergeMarker(message.providerOptions, ns));
 }
 
 /**

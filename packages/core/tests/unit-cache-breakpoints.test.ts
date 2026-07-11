@@ -138,6 +138,34 @@ describe('markCacheTail', () => {
     expect(marked[1].providerOptions).toEqual({ anthropic: { cacheControl: EPHEMERAL } });
   });
 
+  test('openaiCompatible namespace: user/tool markers ride the last content part', () => {
+    const openrouterClaude = { kind: 'openai-compat', bodyNamespace: 'openrouter', markers: true } as const;
+    const input: ModelMessage[] = [
+      { role: 'user', content: 'q1' },
+      {
+        role: 'tool',
+        content: [{ type: 'tool-result', toolCallId: 't1', toolName: 'echo', output: { type: 'text', value: 'r' } }],
+      },
+      { role: 'user', content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] },
+    ];
+    const marked = markCacheTail(input, openrouterClaude);
+    // The @ai-sdk/openai-compatible converter only reads part metadata for
+    // tool results and single-text user messages — markers must sit there.
+    const toolParts = (marked[1] as Extract<ModelMessage, { role: 'tool' }>).content;
+    expect(toolParts[0].providerOptions).toEqual({ openaiCompatible: { cache_control: EPHEMERAL } });
+    const userParts = (marked[2] as Extract<ModelMessage, { role: 'user' }>).content;
+    expect(typeof userParts).not.toBe('string');
+    expect((userParts as Array<{ providerOptions?: unknown }>)[1].providerOptions)
+      .toEqual({ openaiCompatible: { cache_control: EPHEMERAL } });
+    expect(marked[0].providerOptions).toBeUndefined();
+
+    // Rolling strips part-level markers too — re-marking stays at 2 total.
+    const rolled = markCacheTail([...marked, { role: 'user', content: 'next' }], openrouterClaude);
+    const markerCount = JSON.stringify(rolled).match(/"cache_control"/g)?.length ?? 0;
+    expect(markerCount).toBe(2);
+    expect((rolled[1] as Extract<ModelMessage, { role: 'tool' }>).content[0].providerOptions).toBeUndefined();
+  });
+
   test('no-marker strategies return an untouched copy', () => {
     const input = history(3);
     const out = markCacheTail(input, { kind: 'openai-cache-key' });
