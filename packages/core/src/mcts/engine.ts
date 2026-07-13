@@ -82,8 +82,12 @@ export async function runMCTS(
 
     while (phase.budget > 0) {
       throwIfAborted(config.signal);
-      const selected = selectNode(rt.storage.sql, W);
-      if (!selected || selected.depth >= maxDepth) break;
+      // Depth cap lives in selection (WP-A4): a maxed-out argmax no longer
+      // aborts the search — selection skips depth-capped nodes and the budget
+      // keeps flowing to the shallower frontier. Break only when nothing is
+      // selectable (frontier exhausted or every open node is at the cap).
+      const selected = selectNode(rt.storage.sql, W, maxDepth);
+      if (!selected) break;
 
       // EXPAND — spawn N branches
       const branchIds = Array.from({ length: N_BRANCHES }, () =>
