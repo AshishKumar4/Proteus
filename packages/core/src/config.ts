@@ -38,12 +38,6 @@ export interface MCTSDefaults {
   /** Score gap within which a rival branch counts as a near-tied Alternate
    *  Take at convergence (see mcts/takes.ts). */
   takesEpsilon: number;
-  /** Step-level Process Reward gate. Off by default — at single-step rollout
-   *  depth it duplicates the grounded evaluator at extra cost (mcts/step-prm.ts). */
-  stepPrm: boolean;
-  /** Step-PRM prune threshold: proposals scoring below this skip the grounded
-   *  evaluator. Only consulted when stepPrm is on. */
-  stepPrmPruneThreshold: number;
 }
 
 /** Branching-heads parameters. The per-head grounded score reuses the MCTS
@@ -116,8 +110,6 @@ export const DEFAULT_CONFIG: AgentConfig = {
     judgeSamples: 3,
     maxEvalLLMCalls: 4,
     takesEpsilon: 0.1,
-    stepPrm: false,
-    stepPrmPruneThreshold: 0.3,
   },
   heads: {
     mergeSamples: 3,
