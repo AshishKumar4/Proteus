@@ -174,6 +174,9 @@ export async function runMCTS(
                 trajectory: exploration.text,
                 codeUsed: exploration.codeUsed,
                 siblings: proposals.filter((p, j) => j !== i && p.length > 0),
+                // Close the band loophole (WP-A5): if a sibling attempted code,
+                // this prose-only branch is capped at the fail ceiling.
+                siblingsProducedCode: explorations.some((e, j) => j !== i && !!e.codeUsed),
                 executor: rt.executor,
                 judge: rt.judgeModel,
                 explorer: rt.llm,

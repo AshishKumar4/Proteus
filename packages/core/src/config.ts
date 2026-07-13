@@ -13,14 +13,22 @@ export interface MCTSDefaults {
   branches: number;
   maxDepth: number;
   explorationWeight: number;
+  /** Prune settled branches scoring below this. Sits INSIDE the fail band
+   *  [0.05,0.30] (mcts/evaluation.ts BAND TABLE) — below the fail ceiling, so a
+   *  branch at the very top of the fail band gets a reprieve. */
   pruneThreshold: number;
+  /** Convergence acceptance floor = the FAIL ceiling (0.30). A converged answer
+   *  must clear the whole failed-execution / prose-dodge band. */
   minAcceptableScore: number;
   maxCostUSD: number;
   /** Minimum visits before a node can be pruned */
   minVisitsForPrune: number;
-  /** Score threshold below which reflections are generated */
+  /** Score below which a failure lesson is generated = FAIL ceiling + thin
+   *  margin (0.35), so every fail-band node earns a reflection. */
   reflectionThreshold: number;
-  /** Score threshold above which crafted tools are extracted */
+  /** Score above which crafted tools are extracted = pass-band MIDPOINT (0.80 =
+   *  PASS_FLOOR 0.60 + ½·PASS_SPAN 0.40): executed code with an at-or-above-
+   *  median judge only. Unreachable by any prose branch (cap 0.75). */
   craftExtractionThreshold: number;
   /** Judge ensemble size per branch evaluation (median-aggregated). */
   judgeSamples: number;
