@@ -93,7 +93,7 @@ export default function UserMcpPage() {
       <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
         <header>
           <Link to="/user/settings" className="text-xs p-text-3 flex items-center gap-1 hover:p-text mb-2">
-            <ArrowLeftIcon size={12} /> Back to user settings
+            <ArrowLeftIcon size={12} /> Back to account settings
           </Link>
           <div className="flex items-center justify-between gap-4">
             <div>

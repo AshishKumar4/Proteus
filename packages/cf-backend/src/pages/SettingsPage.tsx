@@ -138,7 +138,7 @@ export default function SettingsPage() {
               <span className="sr-only" aria-live="polite">{slugCopied ? "Workspace slug copied" : ""}</span>
               <span>·</span>
               <Link to="/user/settings" className="hover:p-text inline-flex items-center gap-1">
-                <KeyIcon size={11} /> User settings & credentials
+                <KeyIcon size={11} /> Account settings & credentials
               </Link>
               <span>·</span>
               <Link to={`/workspace/${agentId}?altitude=supervise`} className="hover:p-text inline-flex items-center gap-1">
