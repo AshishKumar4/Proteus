@@ -373,13 +373,17 @@ describe('auth and desktop security invariants', () => {
   });
 
   test('web UI offers Cloudflare Workers AI reconnect instead of a no-provider dead end', () => {
+    // The shared self-fetching picker owns the reconnect CTA; the chat page
+    // renders it in the header.
+    const picker = source('src/components/ModelPicker.tsx');
     const workspace = source('src/pages/WorkspacePage.tsx');
     const home = source('src/pages/HomePage.tsx');
     const modal = source('src/components/CreateWorkspaceModal.tsx');
     const settings = source('src/pages/UserSettingsPage.tsx');
-    expect(workspace).not.toContain('(no providers connected)');
-    expect(workspace).toContain('Connect Workers AI');
-    expect(workspace).toContain('cloudflareReconnectPath');
+    expect(picker).not.toContain('(no providers connected)');
+    expect(picker).toContain('Connect Workers AI');
+    expect(picker).toContain('cloudflareReconnectPath');
+    expect(workspace).toContain('ConnectedModelPicker');
     expect(home).toContain('CloudflareAIConnectNotice');
     expect(modal).toContain('CloudflareAIConnectNotice');
     expect(settings).toContain('CloudflareAIConnectNotice');
