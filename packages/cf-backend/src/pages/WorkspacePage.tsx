@@ -5,7 +5,7 @@ import { Button, Badge, InputArea, Loader } from "@cloudflare/kumo";
 import {
   PaperPlaneRightIcon, StopIcon, WrenchIcon, CaretDownIcon, CaretRightIcon,
   ArrowsClockwiseIcon, BrainIcon, GitBranchIcon, CheckCircleIcon, TrashIcon,
-  GearIcon, ArrowSquareOutIcon, GearSixIcon, TimerIcon, TreeStructureIcon, ClockIcon,
+  GearIcon, GearSixIcon, TimerIcon, ClockIcon,
   WarningCircleIcon, ProhibitIcon, DesktopTowerIcon, PaperclipIcon, XIcon, FileIcon,
   ClockCounterClockwiseIcon, PencilSimpleIcon, CheckIcon,
 } from "@phosphor-icons/react";
@@ -1024,9 +1024,6 @@ export default function WorkspacePage() {
                 )}
                 <Link to={`/settings/${agentId}`} className="p-text-2 hover:p-text transition-colors" title="Settings">
                   <GearSixIcon size={14} />
-                </Link>
-                <Link to={`/mcts/${agentId}`} className="flex items-center gap-1 text-[11px] p-accent hover:opacity-80 transition-opacity">
-                  <TreeStructureIcon size={12} />MCTS<ArrowSquareOutIcon size={10} />
                 </Link>
               </div>
             </div>
