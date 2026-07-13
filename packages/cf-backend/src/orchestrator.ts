@@ -1039,7 +1039,10 @@ export class OrchestratorAgent extends Think<Env> {
       // without any registry plumbing (see docs/CRAFT-ARCHITECTURE.md §3).
       // `this` (a subclass) DOES have access to its protected env/ctx; cast to
       // the AgentHost view createCFRuntime needs.
-      this._rt = createCFRuntime(this as unknown as Parameters<typeof createCFRuntime>[0]);
+      this._rt = createCFRuntime(this as unknown as Parameters<typeof createCFRuntime>[0], {
+        ownerUserId: () => this.getOwnerUserId(),
+        workspaceName: this.name,
+      });
     }
     return this._rt;
   }
