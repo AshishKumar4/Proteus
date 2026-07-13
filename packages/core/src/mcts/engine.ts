@@ -10,7 +10,6 @@ import type { AgentRuntime } from '../types/agent-runtime.js';
 import type { MCTSConfig, MCTSPhase, SearchNode } from '../types/mcts.js';
 import type { ConvergenceResult } from '../types/evaluation.js';
 import type { SessionWriter } from './record-node.js';
-import type { BranchScore } from './pruning.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { initSearchTables } from './schemas.js';
 import { initAlternateTakesTable } from './takes.js';
@@ -21,7 +20,7 @@ import { recordNode } from './record-node.js';
 import { converge } from './convergence.js';
 import { evaluateWithMultiModelJudging } from './evaluation.js';
 import { beamPruneByStepScore } from './step-prm.js';
-import { pruneAndReflect } from './pruning.js';
+import { pruneLowValueBranches } from './pruning.js';
 import { maybeStoreCraftedTool } from '../craft/discovery.js';
 import { estimateCost } from './cost.js';
 import { nanoid } from '../utils/nanoid.js';
@@ -38,6 +37,7 @@ export async function runMCTS(
   const maxDepth = config.maxDepth ?? defaults.maxDepth;
   const W = config.explorationWeight ?? defaults.explorationWeight;
   const pruneThreshold = config.pruneThreshold ?? defaults.pruneThreshold;
+  const minVisitsForPrune = defaults.minVisitsForPrune;
   const minAcceptableScore = config.minAcceptableScore ?? defaults.minAcceptableScore;
   const maxCostUSD = config.maxCostUSD ?? defaults.maxCostUSD;
   const judgeSamples = config.judgeSamples ?? defaults.judgeSamples;
@@ -198,18 +198,16 @@ export async function runMCTS(
         }
       }
 
-      // REFLECT on failures + PRUNE
-      const branchScores: BranchScore[] = [];
+      // REFLECT — write a failure lesson to memory for each below-threshold
+      // branch. Pruning is separate: it scans the whole open population for
+      // settled low-value nodes (pruneLowValueBranches), so it isn't confined
+      // to this iteration's freshly-expanded children.
       for (let i = 0; i < N_BRANCHES; i++) {
         const score = scores[i] ?? 0;
-        const nodeId = childNodeIds[i] ?? '';
-        const branchId = branchIds[i] ?? '';
-        let reflection: string | undefined;
-
         if (score < reflectionThreshold) {
           const handle = branchHandles[i];
           if (handle) {
-            reflection = await handle.generateReflection(task);
+            const reflection = await handle.generateReflection(task);
             throwIfAborted(config.signal);
             await rt.memory.append(
               'memory/MEMORY.md',
@@ -218,10 +216,8 @@ export async function runMCTS(
             await rt.memory.index('memory/MEMORY.md');
           }
         }
-
-        branchScores.push({ nodeId, agentKey: branchId, score, reflection });
       }
-      await pruneAndReflect(rt, branchScores, pruneThreshold);
+      await pruneLowValueBranches(rt, pruneThreshold, minVisitsForPrune);
       throwIfAborted(config.signal);
 
       // EXTRACT crafted tools from winners

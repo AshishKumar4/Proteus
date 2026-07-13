@@ -277,7 +277,7 @@ export { backpropagate } from './mcts/backpropagation.js';
 export { recordNode } from './mcts/record-node.js';
 export type { SessionWriter, SessionMessage, SessionMessagePart } from './mcts/record-node.js';
 export { converge } from './mcts/convergence.js';
-export { pruneAndReflect } from './mcts/pruning.js';
+export { pruneLowValueBranches } from './mcts/pruning.js';
 // Sibling diversity at expansion — backends render this into the explore prompt.
 export { diversityDirective, diversityAngle, siblingAngles } from './mcts/diversity.js';
 // Whole-message branch context inheritance (shared by every explore() backend).
