@@ -134,6 +134,7 @@ body { background: var(--c-bg); color: var(--c-text); }
 .p-dot-danger  { background: var(--c-danger); }
 .p-dot-info    { background: var(--c-info); }
 .p-dot-neutral { background: var(--c-text-3); }
+.p-dot-accent  { background: var(--c-accent); }
 
 /* pill badges — tinted background + legible foreground */
 .p-badge-success { background: var(--c-success-tint); color: var(--c-success); }
@@ -141,6 +142,10 @@ body { background: var(--c-bg); color: var(--c-text); }
 .p-badge-danger  { background: var(--c-danger-tint);  color: var(--c-danger); }
 .p-badge-info    { background: var(--c-info-tint);    color: var(--c-info); }
 .p-badge-neutral { background: var(--c-neutral-tint); color: var(--c-text-2); }
+
+/* tinted attention cards — background + hairline only; body text stays neutral
+   (pair with a `border` width class). For colored-text alerts use .p-notice-*. */
+.p-tint-warning { background: var(--c-warning-tint); border-color: color-mix(in srgb, var(--c-warning) 30%, transparent); }
 
 /* inline notice boxes — tint + text + hairline border */
 .p-notice-success { background: var(--c-success-tint); color: var(--c-success); border: 1px solid color-mix(in srgb, var(--c-success) 35%, transparent); }
