@@ -24,7 +24,7 @@ import {
   CompositeVFS, type MountPolicy,
   createSandboxMountVFS, createNimbusMountVFS, createDeviceMountVFS,
   DefaultExecutionRouter, createInlineExecutor,
-  createSandboxExecutor, createSSHTunnelExecutor, type DeviceTransport,
+  createSandboxExecutor, createDeviceTunnelExecutor, type DeviceTransport,
   createNimbusExecutor, type NimbusSandboxHandle,
   createCloudflareVectorStore, createWorkersAIEmbedder, createNoopVectorStore,
   effortFor,
@@ -247,7 +247,7 @@ export function createCFRuntime(agent: AgentHost, hooks: CFRuntimeHooks = {}): C
     },
   });
   void deviceTransport.refreshStatus();
-  executionRouter.register(createSSHTunnelExecutor(deviceTransport));
+  executionRouter.register(createDeviceTunnelExecutor(deviceTransport));
   // File plane: /pc over the same transport the laptop.* tools use. The mount
   // is live only while a device is connected; the adapter scopes paths to the
   // consented subtree (connect dir / home) unless the agent holds the

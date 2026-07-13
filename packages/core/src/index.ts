@@ -406,7 +406,7 @@ export {
   type BackupOptions, type DirectoryBackup, type RestoreBackupResult,
   shouldBackupWorkspace, workspaceBackupOptions, BACKUP_MIN_INTERVAL_MS, BACKUP_TTL_SECONDS,
   isSandboxTransientError,
-  createSSHTunnelExecutor, type DeviceTransport,
+  createDeviceTunnelExecutor, type DeviceTransport,
   devicePresence, parseDevicePresence, deviceChangeNotice, observeDevicePresence,
   DEVICE_PRESENCE_CONFIG_KEY,
   type DeviceStatus, type DevicePresence, type DevicePresenceStore,
