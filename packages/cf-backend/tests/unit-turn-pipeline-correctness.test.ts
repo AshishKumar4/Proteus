@@ -2,6 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+// The turn pipeline is split across the actor substrate (actor-agent.ts —
+// beforeTurn assembly, the BackendHost, the event-injection machinery) and
+// the orchestrator (onChatResponse sequencing, schema, callables).
+const actor = readFileSync(join(import.meta.dir, '..', 'src', 'actor-agent.ts'), 'utf8');
 const source = readFileSync(join(import.meta.dir, '..', 'src', 'orchestrator.ts'), 'utf8');
 
 describe('turn-pipeline correctness wiring', () => {
@@ -11,23 +15,23 @@ describe('turn-pipeline correctness wiring', () => {
     // so hosted agents never saw their latest MEMORY.md lessons. The tail is
     // sourced through the shared readMemoryTail helper (single source of truth
     // for the path + bound) and rides the ephemeral block, never the prefix.
-    expect(source).toContain('readMemoryTail');
-    const weaveIdx = source.indexOf('this.ephemeralLedger.weave(transformed ?? baseMessages');
+    expect(actor).toContain('readMemoryTail');
+    const weaveIdx = actor.indexOf('this.ephemeralLedger.weave(transformed ?? baseMessages');
     expect(weaveIdx).toBeGreaterThan(-1);
-    const sourceIdx = source.indexOf('const memoryTail = await readMemoryTail(this.rt.memory)');
+    const sourceIdx = actor.indexOf('const memoryTail = await readMemoryTail(this.rt.memory)');
     expect(sourceIdx).toBeGreaterThan(-1);
     // Sourced BEFORE the weave, and passed into it alongside facts + executors.
     expect(sourceIdx).toBeLessThan(weaveIdx);
-    const weaveArgs = source.slice(weaveIdx, source.indexOf('const turnLocal = turnLocalContextMessage', weaveIdx));
+    const weaveArgs = actor.slice(weaveIdx, actor.indexOf('const turnLocal = turnLocalContextMessage', weaveIdx));
     expect(weaveArgs).toContain('factsBlock: this.renderFactsForTurn()');
     expect(weaveArgs).toContain('...(memoryTail ? { memoryTail } : {})');
     expect(weaveArgs).toContain('executors: execs');
   });
 
   test('CHAT_CLEAR resets the ephemeral ledger and durable compaction plan after Think handles it', () => {
-    const constructor = source.slice(
-      source.indexOf('constructor(ctx: AgentContext, env: Env)'),
-      source.indexOf('/** Drain batches bound to the LIVE turn'),
+    const constructor = actor.slice(
+      actor.indexOf('constructor(ctx: AgentContext, env: Env)'),
+      actor.indexOf('/** Drain batches bound to the LIVE turn'),
     );
     const dispatch = constructor.indexOf('await dispatchMessage.call');
     const reset = constructor.indexOf('this.ephemeralLedger.reset()');
@@ -48,9 +52,9 @@ describe('turn-pipeline correctness wiring', () => {
   });
 
   test('leftover fallback compensates skipped and rejected enqueues with every batch event id', () => {
-    const helper = source.slice(
-      source.indexOf('private async reenqueueEventBatch'),
-      source.indexOf('/** Durable per-session compaction state'),
+    const helper = actor.slice(
+      actor.indexOf('protected async reenqueueEventBatch'),
+      actor.indexOf('/** Durable per-session compaction state'),
     );
     expect(helper).toContain("if (result.status === 'queued') return");
     expect(helper).toContain('catch (err)');
@@ -59,9 +63,9 @@ describe('turn-pipeline correctness wiring', () => {
   });
 
   test('programmatic turns succeed only after Think completes the turn and keep their own drain identity', () => {
-    const host = source.slice(
-      source.indexOf('private get host(): BackendHost'),
-      source.indexOf('/** Executors whose tools ran this turn'),
+    const host = actor.slice(
+      actor.indexOf('protected get host(): BackendHost'),
+      actor.indexOf('/** Executors whose tools ran this turn'),
     );
     expect(host).toContain("result.status === 'completed' ? 'queued' : 'skipped'");
     expect(host).toContain('this._activeDrainTurnId = drainTurnId');
@@ -77,7 +81,7 @@ describe('turn-pipeline correctness wiring', () => {
   test('delivery leases close only after reply dispatch completes', () => {
     const helper = source.slice(
       source.indexOf('private async completeEventBatch'),
-      source.indexOf('/** Durable per-session compaction state'),
+      source.indexOf('private _engine: EvolutionEngine | null = null;'),
     );
     expect(helper.indexOf('await dispatchEmailRepliesForTurn')).toBeGreaterThan(-1);
     expect(helper).toContain('if (replies.pending)');
@@ -91,9 +95,9 @@ describe('turn-pipeline correctness wiring', () => {
     const response = source.slice(source.indexOf('async onChatResponse(result: ChatResponseResult)'));
     expect(response).toContain('this._pendingDrainReplyTurns.set(result.requestId, drainTurnId)');
     expect(response).toContain('this._pendingDrainReplyTurns.delete(result.requestId)');
-    const clear = source.slice(
-      source.indexOf('constructor(ctx: AgentContext, env: Env)'),
-      source.indexOf('/** Drain batches bound to the LIVE turn'),
+    const clear = actor.slice(
+      actor.indexOf('constructor(ctx: AgentContext, env: Env)'),
+      actor.indexOf('/** Drain batches bound to the LIVE turn'),
     );
     expect(clear).toContain('this._pendingDrainReplyTurns.clear()');
   });
@@ -105,9 +109,9 @@ describe('turn-pipeline correctness wiring', () => {
   });
 
   test('attachment sanitization runs on the whole history BEFORE the extension transform and the ledger weave', () => {
-    const beforeTurn = source.slice(
-      source.indexOf('async beforeTurn(ctx: TurnContext)'),
-      source.indexOf('beforeStep(ctx: PrepareStepContext)'),
+    const beforeTurn = actor.slice(
+      actor.indexOf('async beforeTurn(ctx: TurnContext)'),
+      actor.indexOf('beforeStep(ctx: PrepareStepContext)'),
     );
     const sanitize = beforeTurn.indexOf('await sanitizeAttachmentsForModel(rawMessages');
     const turnStart = beforeTurn.indexOf('await this.extensions.emitTurnStart');
