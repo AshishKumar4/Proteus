@@ -509,10 +509,6 @@ export {
 // turn orchestration).
 export * from './events/hub/index.js';
 
-// InferenceLoop — universal contract for "run a turn." Adapts Think /
-// scaffold / Heads / RLM behind one AsyncIterable<RunEvent> stream.
-export * from './loops/types.js';
-
 // ExplorationStrategy — single seam for "search candidate continuations,
 // score, pick best." MCTS / Heads / ToT / Reflexion / single-shot fit this.
 export * from './strategy/index.js';
