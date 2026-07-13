@@ -14,10 +14,10 @@ import {
 } from "@phosphor-icons/react";
 import { useProteus } from "@/hooks/use-proteus";
 import {
-  listAvailableModels, listDevices, listDeviceConsents, setDeviceConsentScope,
-  type ModelMenuEntry, type UserDevice, type DeviceConsentScope,
+  listDevices, listDeviceConsents, setDeviceConsentScope,
+  type UserDevice, type DeviceConsentScope,
 } from "../lib/user-api";
-import { ModelPicker } from "@/components/ModelPicker";
+import { ConnectedModelPicker } from "@/components/ModelPicker";
 import { Card, inputCls } from "@/components/ui/form";
 
 type ApprovalMode = "strict" | "allow_all" | "deny_all";
@@ -40,7 +40,6 @@ export default function SettingsPage() {
   const [slugCopied, setSlugCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const [models, setModels] = useState<ModelMenuEntry[]>([]);
   const [currentSpec, setCurrentSpec] = useState<string>("");
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("strict");
   const [mcts, setMcts] = useState(DEFAULT_MCTS);
@@ -61,13 +60,11 @@ export default function SettingsPage() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [m, current, mode, mc] = await Promise.all([
-        listAvailableModels().catch(() => []),
+      const [current, mode, mc] = await Promise.all([
         rpc<{ spec: string | null }>("getStoredModelSpec", []).catch(() => ({ spec: null })),
         rpc<{ mode: ApprovalMode }>("getShellApprovalMode", []).catch(() => ({ mode: 'strict' as ApprovalMode })),
         rpc<typeof DEFAULT_MCTS>("getMctsConfig", []).catch(() => DEFAULT_MCTS),
       ]);
-      setModels(m ?? []);
       setCurrentSpec(current?.spec ?? "");
       setApprovalMode(mode?.mode ?? "strict");
       if (mc) setMcts(mc);
@@ -176,19 +173,17 @@ export default function SettingsPage() {
 
         {/* Model */}
         <Card title="Model" icon={GearSixIcon}>
-          {models.length === 0 ? (
-            <p className="text-xs p-text-3">
-              No models available. <Link to="/user/settings" className="p-accent underline">Connect a provider</Link> in user settings.
-            </p>
-          ) : (
-            <ModelPicker
-              models={models}
-              value={currentSpec}
-              onChange={setCurrentSpec}
-              clearable
-              placeholder="(default)"
-            />
-          )}
+          <ConnectedModelPicker
+            value={currentSpec}
+            onChange={setCurrentSpec}
+            clearable
+            placeholder="(default)"
+            renderEmpty={() => (
+              <p className="text-xs p-text-3">
+                No models available. <Link to="/user/settings" className="p-accent underline">Connect a provider</Link> in account settings.
+              </p>
+            )}
+          />
           <p className="text-[11px] p-text-3">
             Changes take effect on the next turn. Provider availability is driven by which credentials you've connected.
           </p>

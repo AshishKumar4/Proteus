@@ -15,8 +15,8 @@ import { MAX_INLINE_ATTACHMENT_BYTES, summarizeRestorePlan } from "@proteus/core
 import type { AlternateTakeSet, FileCheckpointEntry, FileRestorePlan, TakePickOutcome } from "@proteus/core";
 import { useProteus } from "@/hooks/use-proteus";
 import { usePinToBottom } from "@/hooks/use-pin-to-bottom";
-import { cloudflareReconnectPath, touchWorkspace, listAvailableModels, type ModelMenuEntry } from "@/lib/user-api";
-import { ModelPicker } from "@/components/ModelPicker";
+import { touchWorkspace } from "@/lib/user-api";
+import { ConnectedModelPicker } from "@/components/ModelPicker";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConnectionIndicator } from "@/components/connection-indicator";
 import { PreviewFrame } from "@/components/PreviewFrame";
@@ -634,62 +634,6 @@ function ForkModal({
   );
 }
 
-function ModelSelector({ current, onChange }: { current: string; onChange: (id: string) => void }) {
-  // Tri-state: null = loading, "error" = transient fetch failure (retryable),
-  // [] = the fetch succeeded and genuinely no provider is connected. Only the
-  // last one earns the amber reconnect CTA — flashing it during load or on a
-  // flaky request sent connected users through a full OAuth prompt=login.
-  const [models, setModels] = useState<ModelMenuEntry[] | null | "error">(null);
-  const fetchModels = useCallback(() => {
-    setModels(null);
-    listAvailableModels()
-      .then(setModels)
-      .catch(() => setModels("error"));
-  }, []);
-  useEffect(() => { fetchModels(); }, [fetchModels]);
-  if (models === null) {
-    return (
-      <span className="inline-flex items-center rounded-md border p-border px-1.5 py-1 text-[11px] p-text-3" aria-label="Loading models">
-        …
-      </span>
-    );
-  }
-  if (models === "error") {
-    return (
-      <button
-        type="button"
-        onClick={fetchModels}
-        className="inline-flex items-center gap-1 rounded-md border p-border px-2 py-1 text-[11px] p-text-3 hover:p-text-2"
-        title="Couldn't load the model list — click to retry"
-      >
-        <ArrowsClockwiseIcon size={11} />
-        models unavailable
-      </button>
-    );
-  }
-  if (models.length === 0) {
-    return (
-      <a
-        href={cloudflareReconnectPath(window.location.pathname)}
-        className="p-tint-warning p-warning inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] hover:opacity-80"
-        title="Reconnect Cloudflare with Workers AI permissions"
-      >
-        <WarningCircleIcon size={12} />
-        Connect Workers AI
-      </a>
-    );
-  }
-  return (
-    <ModelPicker
-      models={models}
-      value={current}
-      onChange={onChange}
-      size="xs"
-      className="w-52"
-    />
-  );
-}
-
 /** Which work surface a clicked timeline span should reveal. Returns null for
  *  spans with no specific home (the surface stays put; only the selection moves). */
 function surfaceForKind(kind: TimelineKind): SurfaceKind | null {
@@ -1012,7 +956,7 @@ export default function WorkspacePage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <ModelSelector current={as?.model ?? ""} onChange={state.setModel} />
+                <ConnectedModelPicker value={as?.model ?? ""} onChange={state.setModel} size="xs" className="w-52" />
                 <button
                   onClick={toggleTimeline}
                   title={timelineOpen ? "Hide run timeline" : "Show run timeline"}
