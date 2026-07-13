@@ -250,7 +250,7 @@ function ToolCallBlock({ toolName, input, output, isRunning, isError }: {
             </div>
             <div className="p-text-3">{provisionErr.message}</div>
             <div className="p-text-3">
-              Open the <span className="font-medium">Devices</span> surface to provision it.
+              Open the <span className="font-medium">Environment</span> tab to provision it.
             </div>
           </div>
         </div>
@@ -696,7 +696,9 @@ function surfaceForKind(kind: TimelineKind): SurfaceKind | null {
   switch (kind) {
     case "mcts": case "head-split": case "head-merge": case "gepa": return "Reasoning";
     case "scaffold": case "shadow-eval": case "craft": case "reflection": case "curriculum": case "skills": return "Brain";
-    case "runtime-exec": return "Devices";
+    // Legacy "Workspace"/"Devices" spans predate the merged tab — both live
+    // in Environment now.
+    case "runtime-exec": return "Environment";
     default: return null;
   }
 }
@@ -747,7 +749,7 @@ export default function WorkspacePage() {
       else rejected.push(f.name);
     }
     setAttachError(rejected.length > 0
-      ? `Chat attachments are capped at ${MAX_INLINE_ATTACHMENT_BYTES / (1024 * 1024)} MB per message — ${rejected.join(", ")} did not fit. Upload larger files via the Files tab on the Devices surface.`
+      ? `Chat attachments are capped at ${MAX_INLINE_ATTACHMENT_BYTES / (1024 * 1024)} MB per message — ${rejected.join(", ")} did not fit. Upload larger files via the Files pane on the Environment tab.`
       : null);
     if (accepted.length === 0) return;
     const dt = new DataTransfer();
@@ -1175,7 +1177,6 @@ export default function WorkspacePage() {
             executorOutputs={state.executorOutputs}
             lastActiveExecutor={state.lastActiveExecutor}
             onExecute={state.executeInExecutor}
-            agentName={agentId}
             backgroundJobs={state.backgroundJobs}
             runningTaskCount={state.runningTaskCount}
             onRefreshTasks={state.refreshBackgroundJobs}

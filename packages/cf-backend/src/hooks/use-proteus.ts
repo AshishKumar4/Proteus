@@ -112,8 +112,8 @@ export function useProteus(agentId?: string) {
   const [executorOutputs, setExecutorOutputs] = useState<Map<string, ExecutorOutput[]>>(new Map());
   const [lastActiveExecutor, setLastActiveExecutor] = useState<string | null>(null);
   // Pinned (exposed) ports for sandbox previews. Refreshed with the live-data
-  // poll on every surface so auto-switch-to-preview, the Output/Devices badges
-  // and ExecutorsPanel auto-focus stay live wherever the user is. Listing
+  // poll on every surface so auto-switch-to-preview, the Output badge and the
+  // Environment preview auto-focus stay live wherever the user is. Listing
   // ports never provisions a sandbox: getExposedPorts returns [] server-side
   // unless the executor is already active.
   const [pinnedPorts, setPinnedPorts] = useState<Array<{ port: number; url: string; name?: string }>>([]);
