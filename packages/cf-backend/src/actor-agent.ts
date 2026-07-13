@@ -41,6 +41,7 @@ import type {
   ToolCallResultContext, StepContext, ChunkContext,
   PrepareStepContext, StepConfig,
   ToolCallContext as ThinkToolCallContext,
+  ChatResponseResult,
 } from "@cloudflare/think";
 import {
   EvolutionEngine,
@@ -53,6 +54,8 @@ import {
   EphemeralContextLedger, turnLocalContextMessage, fnv1a64,
   // Public extension seam — the SAME host contract runChat drives on the CLI
   ExtensionHost, composePrepareStep,
+  // Overflow recovery — the shared turn-failure policy (see turn-failure.ts)
+  planOverflowRecovery, OVERFLOW_RETRY_EVENT, OVERFLOW_RETRY_TEXT,
   // backend-agnostic per-turn accounting + orchestration (shared by cf + cli)
   TurnAccumulator, type StepLike, AgentOrchestrator, type BackendHost,
   EventInjectionBuffer, type MidTurnEventBatch,
@@ -294,6 +297,106 @@ export abstract class ActorAgent extends Think<Env> {
       } catch (err) {
         console.warn('[proteus] event unbind failed:', id, err);
       }
+    }
+  }
+
+  /** The settled turn's actor-generic front half — every actor's
+   *  onChatResponse calls this FIRST (before anything that can throw or
+   *  return early). Resolves the drain identity, clears in-flight turn
+   *  state, and settles mid-turn event injection: absorbed batches keep
+   *  their reply dispatch with this turn's answer; batches that never saw a
+   *  step boundary (or an aborted turn's) re-enqueue as the standard
+   *  programmatic drain turn, same metadata shape enqueueTurn stamps, so
+   *  the event card and reply dispatch work unchanged. */
+  protected settleTurnEvents(result: ChatResponseResult): {
+    drainTurnId: string | undefined;
+    programmaticUserMessage: UIMessage | null;
+    errorText: string | undefined;
+    completed: boolean;
+    injectedEvents: ReturnType<EventInjectionBuffer['settle']>;
+  } {
+    const drainTurnId = this._activeDrainTurnId ?? this._pendingDrainReplyTurns.get(result.requestId);
+    const programmaticUserMessage = this._activeProgrammaticUserMessage;
+    this._activeDrainTurnId = null;
+    this._activeProgrammaticUserMessage = null;
+    // Persist the provider error TEXT, not just the status — Think keeps only
+    // the LAST terminal error, which the next failure overwrites, so this row
+    // (and the run_end event in recordTurnTelemetry) is the durable evidence
+    // trail.
+    const errorText = result.error?.slice(0, 500);
+    this.logActivity("response_complete", errorText ? `${result.status} — ${errorText}` : result.status);
+    // Clear the in-flight flag once the turn is durably completed — forkAgent
+    // is allowed again from here forward. Evolution (engine.reviewTurnDetached)
+    // runs fire-and-forget and does NOT extend the busy window.
+    this._inFlight = false;
+    this._cliCwd = null;
+    const completed = result.status === 'completed';
+    const injectedEvents = this._eventInjections.settle({ retainForContinuation: completed });
+    const batchesToReenqueue = completed
+      ? injectedEvents.leftover
+      : [...injectedEvents.absorbed, ...injectedEvents.leftover];
+    for (const batch of batchesToReenqueue) {
+      void this.reenqueueEventBatch(batch, completed ? 'leftover' : 'aborted');
+    }
+    return { drainTurnId, programmaticUserMessage, errorText, completed, injectedEvents };
+  }
+
+  /** The settled turn's telemetry — the measured compaction trigger, the
+   *  shared overflow-recovery policy, and the durable turn_end/run_end
+   *  events. Runs for completed AND aborted/errored turns. */
+  protected recordTurnTelemetry(result: ChatResponseResult, turn: {
+    errorText: string | undefined;
+    completed: boolean;
+    programmaticUserMessage: UIMessage | null;
+  }): void {
+    const { errorText, completed, programmaticUserMessage } = turn;
+    // Persist the turn's final provider-priced prompt size — the NEXT turn's
+    // measured compaction trigger. Recorded even on aborted/errored turns:
+    // any step that reported was a real priced request. Bound to the turn's
+    // durable-history length so a later shrink voids it.
+    if (this.acc.lastPromptTokens > 0) {
+      this.compactionState.savePromptTokens(this.name, this.acc.lastPromptTokens, this._turnDurableLength);
+    }
+    // Overflow recovery (core turn-failure policy, shared with the CLI): a
+    // context_length-class provider failure arms force-compaction for the
+    // next assembly and enqueues ONE retry turn — a failed retry never
+    // enqueues another. Rate limits never force-compact (throughput is not
+    // size) unless the measured PER-REQUEST prompt crossed half the window.
+    if (!completed && result.error) {
+      const recovery = planOverflowRecovery({
+        error: result.error,
+        lastPromptTokens: this.acc.lastPromptTokens,
+        contextWindow: this._turnContextWindow > 0 ? this._turnContextWindow : this.sessionContextWindow(),
+        turnWasOverflowRetry: this.turnUserMessageEvent(programmaticUserMessage) === OVERFLOW_RETRY_EVENT,
+      });
+      if (recovery.forceCompaction) {
+        this.compactionState.armForceCompaction(this.name);
+        this.logActivity('overflow_detected',
+          `${recovery.failureClass} — force compaction armed${recovery.enqueueRetry ? ', retry enqueued' : ''}`);
+        if (recovery.enqueueRetry) {
+          void this.host.enqueueTurn({
+            text: OVERFLOW_RETRY_TEXT,
+            metadata: { proteusEvent: OVERFLOW_RETRY_EVENT },
+          }).catch((err: unknown) => console.warn('[proteus] overflow retry enqueue failed:', err));
+        }
+      }
+    }
+    // Emit turn_end + run_end into the durable event log.
+    try {
+      if (this._currentRunId) {
+        this.eventRecorder.emit(this._currentRunId, {
+          type: 'turn_end',
+          turnIndex: this.orch.sessionTurnIndex,
+          tokenUsage: { input: this.acc.usage.input, output: this.acc.usage.output, cached: this.acc.usage.cached },
+        });
+        this.eventRecorder.emit(this._currentRunId, {
+          type: 'run_end',
+          reason: result.status,
+          ...(errorText ? { error: errorText } : {}),
+        });
+      }
+    } catch (err) {
+      console.warn('[proteus] event emit failed at onChatResponse:', err);
     }
   }
 

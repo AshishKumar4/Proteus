@@ -44,11 +44,15 @@ describe('turn-pipeline correctness wiring', () => {
   });
 
   test('aborted turns re-enqueue absorbed and leftover batches without continuation retention', () => {
+    // The settle spine is the ActorAgent helper; onChatResponse must call it
+    // FIRST, before anything that can throw or return early.
     const hook = source.slice(source.indexOf('async onChatResponse(result: ChatResponseResult)'));
     const preEarlyReturn = hook.slice(0, hook.indexOf('if (result.status !== "completed")'));
-    expect(preEarlyReturn).toContain('settle({ retainForContinuation: completed })');
-    expect(preEarlyReturn).toContain('[...injectedEvents.absorbed, ...injectedEvents.leftover]');
-    expect(preEarlyReturn).toContain("this.reenqueueEventBatch(batch, completed ? 'leftover' : 'aborted')");
+    expect(preEarlyReturn).toContain('this.settleTurnEvents(result)');
+    const helper = actor.slice(actor.indexOf('protected settleTurnEvents(result: ChatResponseResult)'));
+    expect(helper).toContain('settle({ retainForContinuation: completed })');
+    expect(helper).toContain('[...injectedEvents.absorbed, ...injectedEvents.leftover]');
+    expect(helper).toContain("this.reenqueueEventBatch(batch, completed ? 'leftover' : 'aborted')");
   });
 
   test('leftover fallback compensates skipped and rejected enqueues with every batch event id', () => {
@@ -72,8 +76,9 @@ describe('turn-pipeline correctness wiring', () => {
     expect(host).toContain('this._activeProgrammaticUserMessage = message');
     expect(host).toContain('finally {');
     expect(host).toContain('this._activeProgrammaticUserMessage === message');
+    const settle = actor.slice(actor.indexOf('protected settleTurnEvents(result: ChatResponseResult)'));
+    expect(settle).toContain('this._activeDrainTurnId ?? this._pendingDrainReplyTurns.get(result.requestId)');
     const response = source.slice(source.indexOf('async onChatResponse(result: ChatResponseResult)'));
-    expect(response).toContain('this._activeDrainTurnId ?? this._pendingDrainReplyTurns.get(result.requestId)');
     expect(response).toContain('const lastUserMsg = programmaticUserMessage ??');
     expect(response).not.toContain('metadata.drainTurnId');
   });
@@ -127,16 +132,16 @@ describe('turn-pipeline correctness wiring', () => {
     expect(beforeTurn).toContain('accepts: this.sessionAcceptedMedia()');
   });
 
-  test('onChatResponse persists the provider error text into the activity log and the run_end event', () => {
-    const hook = source.slice(source.indexOf('async onChatResponse(result: ChatResponseResult)'));
-    const errorCapture = hook.indexOf('const errorText = result.error?.slice(0, 500)');
-    const logRow = hook.indexOf('this.logActivity("response_complete", errorText ? `${result.status} — ${errorText}` : result.status)');
-    const runEnd = hook.indexOf("...(errorText ? { error: errorText } : {})");
+  test('the settle spine persists the provider error text into the activity log and the run_end event', () => {
+    const spine = actor.slice(actor.indexOf('protected settleTurnEvents(result: ChatResponseResult)'));
+    const errorCapture = spine.indexOf('const errorText = result.error?.slice(0, 500)');
+    const logRow = spine.indexOf('this.logActivity("response_complete", errorText ? `${result.status} — ${errorText}` : result.status)');
+    const runEnd = spine.indexOf("...(errorText ? { error: errorText } : {})");
     expect(errorCapture).toBeGreaterThan(-1);
     expect(logRow).toBeGreaterThan(errorCapture);
     expect(runEnd).toBeGreaterThan(logRow);
     // The run_end emit itself carries the error.
-    const runEndEmit = hook.slice(hook.indexOf("type: 'run_end'"), hook.indexOf("console.warn('[proteus] event emit failed at onChatResponse"));
+    const runEndEmit = spine.slice(spine.indexOf("type: 'run_end'"), spine.indexOf("console.warn('[proteus] event emit failed at onChatResponse"));
     expect(runEndEmit).toContain('error: errorText');
   });
 

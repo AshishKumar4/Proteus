@@ -31,8 +31,6 @@ import {
   EvolutionEngine,
   bootstrapScaffold,
   initAllTables, initSearchTables, initScaffoldTables, initCraftScoreTables,
-  // Overflow recovery — the shared turn-failure policy (see turn-failure.ts)
-  planOverflowRecovery, OVERFLOW_RETRY_EVENT, OVERFLOW_RETRY_TEXT,
   shouldBackupWorkspace, workspaceBackupOptions,
   BUILTIN_TOOLS,
   BUILTIN_TOOL_NAMES,
@@ -602,82 +600,11 @@ export class OrchestratorAgent extends ActorAgent {
   // immediately via `this.orch.drainPendingEvents()`.
 
   async onChatResponse(result: ChatResponseResult) {
-    const drainTurnId = this._activeDrainTurnId ?? this._pendingDrainReplyTurns.get(result.requestId);
-    const programmaticUserMessage = this._activeProgrammaticUserMessage;
-    this._activeDrainTurnId = null;
-    this._activeProgrammaticUserMessage = null;
-    // Persist the provider error TEXT, not just the status — Think keeps only
-    // the LAST terminal error, which the next failure overwrites, so this row
-    // (and the run_end event below) is the durable evidence trail.
-    const errorText = result.error?.slice(0, 500);
-    this.logActivity("response_complete", errorText ? `${result.status} — ${errorText}` : result.status);
-    // Clear the in-flight flag once the turn is durably completed — forkAgent
-    // is allowed again from here forward. Evolution (engine.reviewTurnDetached)
-    // runs fire-and-forget and does NOT extend the busy window.
-    this._inFlight = false;
-    this._cliCwd = null;
-    // Mid-turn event injection settles FIRST (before anything that can throw
-    // or return early): batches this turn absorbed get its answer dispatched
-    // to their reply channels below; batches that never saw a step boundary
-    // (the model was already finishing — or the turn aborted) rerun as the
-    // standard programmatic drain turn, same metadata shape enqueueTurn
-    // stamps, so the event card and reply dispatch work unchanged.
-    const completed = result.status === 'completed';
-    const injectedEvents = this._eventInjections.settle({ retainForContinuation: completed });
-    const batchesToReenqueue = completed
-      ? injectedEvents.leftover
-      : [...injectedEvents.absorbed, ...injectedEvents.leftover];
-    for (const batch of batchesToReenqueue) {
-      void this.reenqueueEventBatch(batch, completed ? 'leftover' : 'aborted');
-    }
-    // Persist the turn's final provider-priced prompt size — the NEXT turn's
-    // measured compaction trigger. Recorded even on aborted/errored turns:
-    // any step that reported was a real priced request. Bound to the turn's
-    // durable-history length so a later shrink voids it.
-    if (this.acc.lastPromptTokens > 0) {
-      this.compactionState.savePromptTokens(this.name, this.acc.lastPromptTokens, this._turnDurableLength);
-    }
-    // Overflow recovery (core turn-failure policy, shared with the CLI): a
-    // context_length-class provider failure arms force-compaction for the
-    // next assembly and enqueues ONE retry turn — a failed retry never
-    // enqueues another. Rate limits never force-compact (throughput is not
-    // size) unless the measured PER-REQUEST prompt crossed half the window.
-    if (!completed && result.error) {
-      const recovery = planOverflowRecovery({
-        error: result.error,
-        lastPromptTokens: this.acc.lastPromptTokens,
-        contextWindow: this._turnContextWindow > 0 ? this._turnContextWindow : this.sessionContextWindow(),
-        turnWasOverflowRetry: this.turnUserMessageEvent(programmaticUserMessage) === OVERFLOW_RETRY_EVENT,
-      });
-      if (recovery.forceCompaction) {
-        this.compactionState.armForceCompaction(this.name);
-        this.logActivity('overflow_detected',
-          `${recovery.failureClass} — force compaction armed${recovery.enqueueRetry ? ', retry enqueued' : ''}`);
-        if (recovery.enqueueRetry) {
-          void this.host.enqueueTurn({
-            text: OVERFLOW_RETRY_TEXT,
-            metadata: { proteusEvent: OVERFLOW_RETRY_EVENT },
-          }).catch((err: unknown) => console.warn('[proteus] overflow retry enqueue failed:', err));
-        }
-      }
-    }
-    // Emit turn_end + run_end into the durable event log.
-    try {
-      if (this._currentRunId) {
-        this.eventRecorder.emit(this._currentRunId, {
-          type: 'turn_end',
-          turnIndex: this.orch.sessionTurnIndex,
-          tokenUsage: { input: this.acc.usage.input, output: this.acc.usage.output, cached: this.acc.usage.cached },
-        });
-        this.eventRecorder.emit(this._currentRunId, {
-          type: 'run_end',
-          reason: result.status,
-          ...(errorText ? { error: errorText } : {}),
-        });
-      }
-    } catch (err) {
-      console.warn('[proteus] event emit failed at onChatResponse:', err);
-    }
+    // The actor-generic settle spine lives on ActorAgent; everything after it
+    // here is orchestrator sequencing (takes, branches, evolution, naming).
+    const { drainTurnId, programmaticUserMessage, errorText, completed, injectedEvents } =
+      this.settleTurnEvents(result);
+    this.recordTurnTelemetry(result, { errorText, completed, programmaticUserMessage });
     if (result.status !== "completed") {
       // An aborted/errored live turn leaves nothing to compare a branch
       // against — and any takes its think-mcts runs captured competed for an
