@@ -23,11 +23,7 @@ import {
   listTriggers, createDurableWebhook, cancelTrigger,
   type TriggerSummary, type CreateWebhookResult,
 } from "../lib/user-api";
-
-const inputCls = "w-full rounded-md px-3 py-2 text-sm p-text focus:outline-none transition-all"
-  + " border border-[var(--c-input-border)] bg-[var(--c-surface)]"
-  + " focus:border-[var(--c-accent)] focus:ring-1 focus:ring-[var(--c-accent-subtle)]"
-  + " placeholder:p-text-3";
+import { inputCls } from "@/components/ui/form";
 
 export default function TriggersTab() {
   const { agentId } = useParams();

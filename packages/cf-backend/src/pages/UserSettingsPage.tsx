@@ -28,27 +28,7 @@ import {
   type ModelMenuEntry, type ProviderCatalogEntry, type DeviceFlowStart, type CliSetup,
   type CloudflareGatewayStatus,
 } from "../lib/user-api";
-
-const inputCls = "w-full rounded-md px-3 py-2 text-sm p-text focus:outline-none transition-all"
-  + " border border-[var(--c-input-border)] bg-[var(--c-surface)]"
-  + " focus:border-[var(--c-accent)] focus:ring-1 focus:ring-[var(--c-accent-subtle)]"
-  + " placeholder:p-text-3";
-
-function Card({ title, icon: Icon, children }: {
-  title: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="p-card rounded-xl p-5 space-y-4">
-      <h2 className="flex items-center gap-2 text-sm font-semibold">
-        <Icon size={16} className="p-accent" />
-        <span>{title}</span>
-      </h2>
-      {children}
-    </section>
-  );
-}
+import { Card, inputCls } from "@/components/ui/form";
 
 export default function UserSettingsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);

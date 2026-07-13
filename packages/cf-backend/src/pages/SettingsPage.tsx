@@ -14,26 +14,7 @@ import {
 import { useProteus } from "@/hooks/use-proteus";
 import { listAvailableModels, type ModelMenuEntry } from "../lib/user-api";
 import { ModelPicker } from "@/components/ModelPicker";
-
-const inputCls = "w-full rounded-md px-3 py-2 text-sm p-text focus:outline-none transition-all"
-  + " border border-[var(--c-input-border)] bg-[var(--c-surface)]"
-  + " focus:border-[var(--c-accent)] focus:ring-1 focus:ring-[var(--c-accent-subtle)]"
-  + " placeholder:p-text-3";
-
-function Card({ title, icon: Icon, children }: {
-  title: string; icon: React.ComponentType<{ size?: number; className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="p-card rounded-xl p-5 space-y-3">
-      <h2 className="flex items-center gap-2 text-sm font-semibold">
-        <Icon size={16} className="p-accent" />
-        <span>{title}</span>
-      </h2>
-      {children}
-    </section>
-  );
-}
+import { Card, inputCls } from "@/components/ui/form";
 
 type ApprovalMode = "strict" | "allow_all" | "deny_all";
 

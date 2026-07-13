@@ -8,22 +8,14 @@ import { ORCHESTRATOR_AGENT_SLUG } from "@proteus/core";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { FileUIPart, UIMessage } from "ai";
 import type { ToolInfo, MemoryEntry, MCTSNode, TimelineSpan, BackgroundJob, PendingConsent, Rpc } from "../lib/protocol";
+import type { ExecutorInfo } from "../lib/executors";
 import { touchWorkspace } from "../lib/user-api";
+
+export type { ExecutorInfo };
 
 export interface ExecutorOutput {
   id: string; command: string; stdout: string; stderr: string;
   exit_code: number; created_at: number;
-}
-
-export interface ExecutorInfo {
-  name: string;
-  kind: string;
-  capabilities: string[];
-  available: boolean;
-  configured: boolean;
-  active: boolean;
-  status: "not_configured" | "idle" | "active" | "disconnected" | "error";
-  reason?: string;
 }
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
