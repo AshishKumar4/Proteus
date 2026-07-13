@@ -4396,10 +4396,11 @@ export class OrchestratorAgent extends Think<Env> {
     return this.rt.compositeVfs.listMounts();
   }
 
-  /** The workspace's agent roster: this DO's orchestrator is the default
-   *  agent (always present); the rest are the owner's team peers, reachable
-   *  and spawnable via the `team` tool. Unowned workspaces have only their
-   *  default agent. */
+  /** The agent roster as seen from this workspace: this DO's orchestrator is
+   *  the default agent (always present); the rest are the default agents of
+   *  the owner's OTHER workspaces, listed as team peers (reachable/spawnable
+   *  via the `team` tool) — not co-residents of this workspace. Unowned
+   *  workspaces roster only their default agent. */
   @callable() async getWorkspaceAgents(): Promise<WorkspaceAgent[]> {
     const self = { name: this.name, displayName: this.getDisplayName() };
     if (!this.getOwnerUserId()) return buildWorkspaceAgents(self, []);
