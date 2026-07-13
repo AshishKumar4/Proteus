@@ -518,7 +518,7 @@ function createDualPathLLM(agent: AgentHost): LLM {
 
 /**
  * Cross-model judge for MCTS branch evaluation (rt.judgeModel). Resolves the
- * operator's review_model (Settings → setAgentConfig('review_model')) at call
+ * operator's review_model (the `review_model` agent_config key) at call
  * time so judging can run on a DIFFERENT model from the explorer — the
  * self-enhancement-bias fix. When no review_model is set this resolves the
  * agent's chat model: same-model judging is the documented fallback, not a
