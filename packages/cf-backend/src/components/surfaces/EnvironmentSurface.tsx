@@ -115,11 +115,21 @@ export function EnvironmentSurface(props: EnvironmentSurfaceProps) {
   const selectedMount = mounts.find((m) => m.name === selectedName) ?? null;
   const selectedExec = selectedMount ? execByName.get(executorForMount(selectedMount.name)) : undefined;
 
-  // Auto-focus newly-exposed ports: jump to the sandbox mount's newest preview.
-  const prevPortsRef = useRef<number[]>([]);
+  // Auto-focus newly-exposed ports: jump to the sandbox mount's newest
+  // preview. On first render, ports that already exist only steer the view
+  // when the user hasn't picked a mount themselves.
+  const prevPortsRef = useRef<number[] | null>(null);
   useEffect(() => {
     const cur = pinnedPorts.map((p) => p.port);
     const prev = prevPortsRef.current;
+    prevPortsRef.current = cur;
+    if (prev === null) {
+      if (cur.length > 0 && selected === null) {
+        setSelected("sandbox");
+        setPane({ kind: "preview", port: cur[cur.length - 1] });
+      }
+      return;
+    }
     const added = cur.filter((p) => !prev.includes(p));
     if (added.length > 0) {
       setSelected("sandbox");
@@ -127,8 +137,7 @@ export function EnvironmentSurface(props: EnvironmentSurfaceProps) {
     } else if (pane.kind === "preview" && !cur.includes(pane.port)) {
       setPane(cur.length > 0 ? { kind: "preview", port: cur[0] } : { kind: "files" });
     }
-    prevPortsRef.current = cur;
-  }, [pinnedPorts, pane]);
+  }, [pinnedPorts, pane, selected]);
 
   const orchestrator = agents.find((a) => a.role === "orchestrator");
   const peers = agents.filter((a) => a.role === "peer");
