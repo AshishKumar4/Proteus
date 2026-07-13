@@ -710,7 +710,11 @@ export default function WorkspacePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = useProteus(agentId);
-  const [altitude, setAltitude] = useState<"run" | "supervise">("run");
+  // ?altitude=supervise deep-links straight to the Supervise altitude (the
+  // /triggers/:id redirect and settings' Automations link use it).
+  const [altitude, setAltitude] = useState<"run" | "supervise">(
+    () => new URLSearchParams(location.search).get("altitude") === "supervise" ? "supervise" : "run",
+  );
   const [surface, setSurface] = useState<SurfaceKind>("Brain");
   const [chatInput, setChatInput] = useState("");
   const [forkFor, setForkFor] = useState<string | null>(null); // message id to fork at, or null

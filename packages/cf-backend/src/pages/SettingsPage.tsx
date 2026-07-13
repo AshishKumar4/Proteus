@@ -144,8 +144,8 @@ export default function SettingsPage() {
                 <KeyIcon size={11} /> User settings & credentials
               </Link>
               <span>·</span>
-              <Link to={`/triggers/${agentId}`} className="hover:p-text inline-flex items-center gap-1">
-                <PlugIcon size={11} /> Triggers (webhooks, timers)
+              <Link to={`/workspace/${agentId}?altitude=supervise`} className="hover:p-text inline-flex items-center gap-1">
+                <PlugIcon size={11} /> Automations (webhooks, timers)
               </Link>
             </p>
           </div>
