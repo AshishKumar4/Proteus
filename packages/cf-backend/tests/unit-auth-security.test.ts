@@ -219,13 +219,13 @@ describe('auth and desktop security invariants', () => {
 
   test('browser UI uses app auth routes rather than Cloudflare Access logout/login URLs', () => {
     const sidebar = source('src/components/Sidebar.tsx');
-    const triggers = source('src/pages/TriggersTab.tsx');
+    const supervise = source('src/pages/SupervisePage.tsx'); // webhook step-up login lives here
     const routes = source('src/auth/routes.ts');
     expect(sidebar).toContain('href="/logout"');
     expect(sidebar).not.toContain('/cdn-cgi/access/logout');
     expect(routes).toContain("url.searchParams.get('return_to') ?? '/'");
-    expect(triggers).toContain("new URL('/login', window.location.origin)");
-    expect(triggers).not.toContain('/cdn-cgi/access/login');
+    expect(supervise).toContain('new URL("/login", window.location.origin)');
+    expect(supervise).not.toContain('/cdn-cgi/access/login');
   });
 
   test('OAuth sessions are HttpOnly host cookies and state is server-side', () => {
