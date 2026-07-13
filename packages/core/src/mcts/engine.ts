@@ -48,7 +48,7 @@ export async function runMCTS(
   const reflectionThreshold = defaults.reflectionThreshold;
   const craftExtractionThreshold = defaults.craftExtractionThreshold;
 
-  const estimate = estimateCost(config.budget, N_BRANCHES, 3, maxEvalLLMCalls);
+  const estimate = estimateCost(config.budget, N_BRANCHES, maxEvalLLMCalls);
   if (estimate.estimatedUSD > maxCostUSD) {
     throw new Error(
       `Estimated cost $${estimate.estimatedUSD.toFixed(2)} exceeds limit $${maxCostUSD}. ` +
