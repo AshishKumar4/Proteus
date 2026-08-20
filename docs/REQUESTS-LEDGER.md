@@ -18,7 +18,7 @@ make each row mechanical rather than remembered.
 | Per-node private home reaches a shipped search | OPEN — `agentHomeNodeProvisioner` has no production caller, so every node reports `shared-origin-plane` | `grep -c provisionHome packages/core/src/tools/agents-tool.ts` is 0 |
 | Mission port charges a node's steps | OPEN — `SwarmRunDeps.mission` has no producer, and `agents-tool.ts:918` already charges a lump, so naive wiring double-bills | `grep -n "mission" packages/core/src/strategy/swarm-run.ts` shows the thread, no setter |
 | Deploy latest to production | OPEN — production serves an older build | `curl -sS $ORIGIN/api/health` sha equals `git rev-parse --short HEAD` |
-| `@proteus/*` → `@kinu.run/*` | NOT STARTED — 463 sites, 7 non-mechanical traps, one atomic commit | `grep -rc "@kinu.run" package.json` is 0 |
+| `@kinu/*` → `@kinu.run/*` | NOT STARTED — 463 sites, 7 non-mechanical traps, one atomic commit | `grep -rc "@kinu.run" package.json` is 0 |
 | `advance:'pareto'` | REFUSED BY DESIGN — needs a per-instance measurement path and a dominance comparison; the refusal names both | `grep -n "pareto" packages/core/src/strategy/swarm-run.ts` |
 
 ## Done, with the check that proves it
