@@ -13,11 +13,9 @@ gates that make each row mechanical rather than remembered.
 
 | Request | State | Verify |
 | --- | --- | --- |
-| Per-node private home reaches a shipped search | OPEN. `agentHomeNodeProvisioner` has no production caller, so every node reports `shared-origin-plane` | `grep -c provisionHome packages/core/src/tools/agents-tool.ts` is 0 |
-| Mission port charges a node's steps | OPEN. `SwarmRunDeps.mission` has no producer, and `agents-tool.ts:918` already charges a lump, so naive wiring double-bills | `grep -n "mission" packages/core/src/strategy/swarm-run.ts` shows the thread, no setter |
-| Deploy latest to production | OPEN. Production serves an older build | `curl -sS $ORIGIN/api/health` sha equals `git rev-parse --short HEAD` |
-| `@kinu.run/*` → `@kinu.run/*` | NOT STARTED. 463 sites, 7 non-mechanical traps, one atomic commit | `grep -rc "@kinu.run" package.json` is 0 |
-| `advance:'pareto'` | REFUSED BY DESIGN. It needs a per-instance measurement path and a dominance comparison; the error names both | `grep -n "pareto" packages/core/src/strategy/swarm-run.ts` |
+| Private node home on the hosted backend | OPEN. Local nodes receive `nodeHome`; hosted nodes report `shared-origin-plane` and share the parent home | `actor-agent.ts` does not supply `nodeHome`; `cli-backend/src/runtime.ts` does |
+| Deploy latest to production | OPEN. Production SHA must match current `main` | `curl -sS $ORIGIN/api/health` sha equals `git rev-parse --short HEAD` |
+| `advance:'pareto'` | UNIMPLEMENTED. It needs a per-instance measurement path and dominance comparison | `grep -n "pareto" packages/core/src/strategy/swarm-run.ts` |
 
 ## Done, with the check that proves it
 
@@ -28,6 +26,7 @@ gates that make each row mechanical rather than remembered.
 | A node is a full agent on one shared loop | `head-inference.ts` owns no loop; `runChat` is the body for a CLI session and a node |
 | A node backgrounds work and is woken | `unit-node-backgrounding.test.ts` |
 | One suite over orchestrator, subordinate and node | `unit-three-kinds-one-contract.test.ts`, 44 tests, zero skips |
+| Mission limits charge node steps | `agents-tool.ts` supplies `mission`; `unit-swarm-mission.test.ts` verifies node charges |
 | Nimbus fixes upstreamed, published, patches dropped | `patches/` holds `@plannotator/ui` only |
 | Never weaken a gate | `AGENTS.md` § "A red gate is work" |
 | Errors carry their cause chain | `gate:silent-drop` |
